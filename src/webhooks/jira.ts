@@ -2,6 +2,9 @@ import { Router, type Request, type Response } from 'express';
 import { timingSafeEqual } from 'crypto';
 import { z } from 'zod';
 import { orchestratorQueue, type OrchestratorJobData } from '../queue/index';
+import { childLogger } from '../lib/logger';
+
+const log = childLogger({ module: 'webhook.jira' });
 
 const router = Router();
 
@@ -57,14 +60,14 @@ function validateSecret(received: unknown): boolean {
 router.post('/jira', async (req: Request, res: Response) => {
   // 1. Valida segredo
   if (!validateSecret(req.query['secret'])) {
-    console.warn('[webhook/jira] requisição não autorizada — secret inválido');
+    log.warn({ ip: req.ip }, 'requisição não autorizada — secret inválido');
     return res.status(401).json({ error: 'unauthorized' });
   }
 
   // 2. Valida estrutura do payload
   const parsed = jiraWebhookSchema.safeParse(req.body);
   if (!parsed.success) {
-    console.warn('[webhook/jira] payload inválido:', parsed.error.message);
+    log.warn({ validationError: parsed.error.message }, 'payload inválido');
     return res.status(400).json({ error: 'invalid_payload' });
   }
 
@@ -84,9 +87,7 @@ router.post('/jira', async (req: Request, res: Response) => {
   const fromStatus = statusChange.fromString ?? null;
   const toStatus = statusChange.toString ?? null;
 
-  console.log(
-    `[webhook/jira] ${issue.key} :: "${fromStatus}" → "${toStatus}"`,
-  );
+  log.info({ jiraKey: issue.key, from: fromStatus, to: toStatus }, 'transição recebida');
 
   // 5. Enfileira job no BullMQ
   const jobData: OrchestratorJobData = {
@@ -103,9 +104,7 @@ router.post('/jira', async (req: Request, res: Response) => {
     jobId: `${issue.key}-${Date.now()}`,
   });
 
-  console.log(
-    `[webhook/jira] job enfileirado — id: ${job.id} :: ${issue.key} → "${toStatus}"`,
-  );
+  log.info({ jiraKey: issue.key, jobId: job.id, from: fromStatus, to: toStatus }, 'job enfileirado');
 
   return res.status(200).json({
     queued: true,

@@ -4,6 +4,9 @@ import { db, schema } from '../db/index';
 import { updateStoryStatus, updateStoryDescription } from '../db/stories';
 import { redisConnection } from '../queue/index';
 import { getIssue, moveCardTo, addComment } from '../jira/client';
+import { childLogger } from '../lib/logger';
+
+const log = childLogger({ module: 'agent.po' });
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -90,8 +93,9 @@ ${descSection}
 async function processPoJob(job: Job<PoAgentJobData>): Promise<unknown> {
   const { storyId, jiraKey, agentRunId, summary } = job.data;
   const startedAt = new Date();
+  const jobLog = log.child({ jiraKey, agentRunId, storyId });
 
-  console.log(`[agent-po] iniciando para ${jiraKey} (run: ${agentRunId})`);
+  jobLog.info('iniciando execução do agente PO');
 
   // 1. Marca run como 'running'
   await db
@@ -104,21 +108,20 @@ async function processPoJob(job: Job<PoAgentJobData>): Promise<unknown> {
   try {
     const issue = await getIssue(jiraKey);
     const descBlock = issue.fields.description;
-    // Extrai texto simples do ADF (Atlassian Document Format)
     fullDescription = extractTextFromAdf(descBlock) ?? '';
     if (fullDescription) {
       await updateStoryDescription(jiraKey, fullDescription);
-      console.log(`[agent:po] descrição persistida para ${jiraKey} (${fullDescription.length} chars)`);
+      jobLog.debug({ descriptionLength: fullDescription.length }, 'descrição Jira persistida');
     }
   } catch (err) {
-    console.warn(`[agent:po] falha ao buscar descrição de ${jiraKey}:`, (err as Error).message);
+    jobLog.warn({ err: (err as Error).message }, 'falha ao buscar descrição — continuando sem ela');
   }
 
   // 3. Gera PRD.md (stub)
   const prdContent = buildPrdContent(jiraKey, summary, fullDescription);
-  console.log(`[agent-po] PRD.md gerado (${prdContent.length} chars)`);
+  jobLog.debug({ prdLength: prdContent.length }, 'PRD.md gerado');
 
-  // 3. Salva artifact no banco
+  // 4. Salva artifact no banco
   const [artifact] = await db
     .insert(schema.artifacts)
     .values({
@@ -130,25 +133,25 @@ async function processPoJob(job: Job<PoAgentJobData>): Promise<unknown> {
     })
     .returning({ id: schema.artifacts.id });
 
-  console.log(`[agent-po] artifact salvo — id: ${artifact!.id}`);
+  jobLog.info({ artifactId: artifact!.id, filePath: `${jiraKey}/PRD.md` }, 'artifact PRD salvo');
 
-  // 4. Move card Jira para "Aguardando Aceite PRD"
+  // 5. Move card Jira para "Aguardando Aceite PRD"
   try {
     await moveCardTo(jiraKey, 'Aguardando Aceite PRD');
-    console.log(`[agent-po] ${jiraKey} movido para "Aguardando Aceite PRD"`);
+    jobLog.info({ to: 'Aguardando Aceite PRD' }, 'card movido no Jira');
   } catch (err) {
-    console.error(`[agent-po] falha ao mover ${jiraKey}:`, (err as Error).message);
+    jobLog.error({ err: (err as Error).message, to: 'Aguardando Aceite PRD' }, 'falha ao mover card');
     throw err;
   }
 
-  // 4a. Atualiza status no banco imediatamente — não espera o próximo webhook
+  // 5a. Atualiza status no banco imediatamente — não espera o próximo webhook
   await updateStoryStatus(jiraKey, 'Aguardando Aceite PRD', {
     lastAgentType: 'po',
     lastAgentRunId: agentRunId,
   });
-  console.log(`[agent-po] status do banco atualizado → "Aguardando Aceite PRD"`);
+  jobLog.debug('status do banco sincronizado → Aguardando Aceite PRD');
 
-  // 5. Adiciona comentário no Jira
+  // 6. Adiciona comentário no Jira
   const comment =
     `🤖 *Agente PO (stub)* concluiu a geração do PRD.\n\n` +
     `📄 Artifact: \`${jiraKey}/PRD.md\`\n\n` +
@@ -156,28 +159,22 @@ async function processPoJob(job: Job<PoAgentJobData>): Promise<unknown> {
 
   try {
     await addComment(jiraKey, comment);
-    console.log(`[agent-po] comentário adicionado em ${jiraKey}`);
+    jobLog.debug('comentário adicionado no Jira');
   } catch (err) {
-    // Comentário falhou — não bloqueia o fluxo
-    console.warn(`[agent-po] falha ao comentar em ${jiraKey}:`, (err as Error).message);
+    jobLog.warn({ err: (err as Error).message }, 'falha ao comentar — fluxo não interrompido');
   }
 
-  // 6. Marca run como 'completed'
+  // 7. Marca run como 'completed'
   const completedAt = new Date();
+  const durationMs = completedAt.getTime() - startedAt.getTime();
   const output = { artifactId: artifact!.id, filePath: `${jiraKey}/PRD.md` };
 
   await db
     .update(schema.agentRuns)
-    .set({
-      status: 'completed',
-      output,
-      durationMs: completedAt.getTime() - startedAt.getTime(),
-      completedAt,
-    })
+    .set({ status: 'completed', output, durationMs, completedAt })
     .where(eq(schema.agentRuns.id, agentRunId));
 
-  console.log(`[agent-po] run ${agentRunId} concluído em ${completedAt.getTime() - startedAt.getTime()}ms`);
-
+  jobLog.info({ durationMs, output }, 'agente PO concluído');
   return output;
 }
 
@@ -190,21 +187,20 @@ export function createPoAgentWorker() {
   });
 
   worker.on('completed', (job, result) => {
-    console.log(`[agent-po] job ${job.id} concluído:`, JSON.stringify(result));
+    log.info({ jobId: job.id, result }, 'job concluído');
   });
 
   worker.on('failed', (job, err) => {
-    console.error(
-      `[agent-po] job ${job?.id} falhou (tentativa ${job?.attemptsMade}/${job?.opts.attempts}):`,
-      err.message,
+    log.error(
+      { jobId: job?.id, attempt: job?.attemptsMade, maxAttempts: job?.opts.attempts, err: err.message },
+      'job falhou',
     );
   });
 
   worker.on('error', (err) => {
-    console.error('[agent-po] erro no worker:', err.message);
+    log.error({ err: err.message }, 'erro no worker');
   });
 
-  console.log('[agent-po] worker iniciado — aguardando jobs');
-
+  log.info('worker iniciado — aguardando jobs');
   return worker;
 }

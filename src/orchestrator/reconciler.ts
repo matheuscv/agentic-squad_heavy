@@ -2,7 +2,10 @@ import { inArray } from 'drizzle-orm';
 import { db, schema } from '../db/index';
 import { orchestratorQueue } from '../queue/index';
 import { fetchActiveIssues } from '../jira/client';
+import { childLogger } from '../lib/logger';
 import { isKnownStatus, getStateOrder, JIRA_TO_DB_STATUS } from './state-machine';
+
+const log = childLogger({ module: 'reconciler' });
 
 // ─── Intervalo de polling ─────────────────────────────────────────────────────
 
@@ -29,11 +32,12 @@ const IN_FLIGHT_DB_STATUSES: (typeof schema.storyStatusEnum.enumValues)[number][
 async function reconcile(): Promise<void> {
   const projectKey = process.env.JIRA_PROJECT_KEY;
   if (!projectKey) {
-    console.warn('[reconciler] JIRA_PROJECT_KEY não configurado — pulando ciclo');
+    log.warn('JIRA_PROJECT_KEY não configurado — ciclo ignorado');
     return;
   }
 
-  console.log('[reconciler] iniciando ciclo de reconciliação...');
+  const t0 = Date.now();
+  log.debug('iniciando ciclo de reconciliação');
 
   // 1. Busca issues em andamento no banco
   const dbStories = await db
@@ -47,22 +51,21 @@ async function reconcile(): Promise<void> {
     .where(inArray(schema.stories.status, IN_FLIGHT_DB_STATUSES));
 
   if (dbStories.length === 0) {
-    console.log('[reconciler] nenhuma story em andamento — ciclo encerrado');
+    log.debug('nenhuma story em andamento — ciclo encerrado');
     return;
   }
 
-  console.log(`[reconciler] ${dbStories.length} story(ies) em andamento no banco`);
+  log.debug({ count: dbStories.length }, 'stories em andamento encontradas');
 
   // 2. Busca estado real no Jira
   let jiraIssues;
   try {
     jiraIssues = await fetchActiveIssues(projectKey);
   } catch (err) {
-    console.error('[reconciler] erro ao buscar issues do Jira:', (err as Error).message);
+    log.error({ err: (err as Error).message }, 'falha ao buscar issues do Jira');
     return;
   }
 
-  // Indexa por key para lookup O(1)
   const jiraByKey = new Map(jiraIssues.map((i) => [i.key, i]));
 
   // 3. Compara e detecta divergências
@@ -72,38 +75,29 @@ async function reconcile(): Promise<void> {
     const jiraIssue = jiraByKey.get(story.jiraKey);
 
     if (!jiraIssue) {
-      // Issue não encontrada no Jira (pode ter sido concluída ou removida do filtro)
-      console.log(
-        `[reconciler] ${story.jiraKey} não retornada pelo Jira — provavelmente concluída ou backlog`,
-      );
+      log.debug({ jiraKey: story.jiraKey }, 'issue não retornada pelo Jira — concluída ou backlog');
       continue;
     }
 
     const jiraCurrentStatus = jiraIssue.fields.status.name;
 
-    // Sem divergência
-    if (jiraCurrentStatus === story.jiraStatus) {
-      continue;
-    }
+    if (jiraCurrentStatus === story.jiraStatus) continue;
 
-    // Verifica se o Jira está à frente do banco (webhook perdido)
     const dbOrder = getStateOrder(story.jiraStatus);
     const jiraOrder = getStateOrder(jiraCurrentStatus);
 
     if (!isKnownStatus(jiraCurrentStatus)) {
-      console.warn(
-        `[reconciler] ${story.jiraKey} — status Jira desconhecido: "${jiraCurrentStatus}"`,
-      );
+      log.warn({ jiraKey: story.jiraKey, status: jiraCurrentStatus }, 'status Jira desconhecido');
       continue;
     }
 
     if (jiraOrder > dbOrder) {
       divergences++;
-      console.warn(
-        `[reconciler] DIVERGÊNCIA detectada em ${story.jiraKey}: banco="${story.jiraStatus}" ← Jira="${jiraCurrentStatus}" — enfileirando reconciliação`,
+      log.warn(
+        { jiraKey: story.jiraKey, dbStatus: story.jiraStatus, jiraStatus: jiraCurrentStatus },
+        'divergência detectada — webhook perdido, reenfileirando',
       );
 
-      // Reencaminha como se fosse um webhook que nunca chegou
       await orchestratorQueue.add(
         'jira:transition',
         {
@@ -116,23 +110,19 @@ async function reconcile(): Promise<void> {
           receivedAt: new Date().toISOString(),
         },
         {
-          // jobId único evita duplicatas se o reconciler rodar antes do worker processar
           jobId: `reconcile-${story.jiraKey}-${JIRA_TO_DB_STATUS[jiraCurrentStatus]}`,
-          // Remove após 24h para não acumular jobs de reconciliação antigos
           removeOnComplete: { age: 86_400 },
         },
       );
     } else if (jiraOrder < dbOrder) {
-      // Banco está à frente do Jira — situação incomum, apenas loga
-      console.warn(
-        `[reconciler] ${story.jiraKey} — banco (${story.jiraStatus}) está à frente do Jira (${jiraCurrentStatus}): aguardando Jira atualizar`,
+      log.warn(
+        { jiraKey: story.jiraKey, dbStatus: story.jiraStatus, jiraStatus: jiraCurrentStatus },
+        'banco à frente do Jira — aguardando Jira atualizar',
       );
     }
   }
 
-  console.log(
-    `[reconciler] ciclo concluído — ${divergences} divergência(s) corrigida(s)`,
-  );
+  log.info({ divergences, durationMs: Date.now() - t0, storiesChecked: dbStories.length }, 'ciclo concluído');
 }
 
 // ─── Criação do Reconciler ────────────────────────────────────────────────────
@@ -150,9 +140,7 @@ export function createReconciler(): NodeJS.Timeout {
   }, POLL_INTERVAL_MS);
   interval.unref();
 
-  console.log(
-    `[reconciler] agendado — primeiro ciclo em 30s, depois a cada ${POLL_INTERVAL_MS / 1_000}s`,
-  );
+  log.info({ firstCycleDelayMs: 30_000, intervalMs: POLL_INTERVAL_MS }, 'reconciler agendado');
 
   return interval;
 }

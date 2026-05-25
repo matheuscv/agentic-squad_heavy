@@ -4,20 +4,22 @@ import { upsertStory } from '../db/stories';
 import { redisConnection, type OrchestratorJobData } from '../queue/index';
 import { moveCardTo } from '../jira/client';
 import { poAgentQueue } from '../agents/po';
+import { childLogger } from '../lib/logger';
 import {
   handleTransition,
   getStateOrder,
   type JiraStatus,
 } from './state-machine';
 
+const log = childLogger({ module: 'orchestrator' });
+
 // ─── Processador do job ───────────────────────────────────────────────────────
 
 async function processJob(job: Job<OrchestratorJobData>) {
   const { jiraKey, fromStatus, toStatus, summary } = job.data;
+  const t0 = Date.now();
 
-  console.log(
-    `[orchestrator] processando ${jiraKey} :: "${fromStatus}" → "${toStatus}"`,
-  );
+  log.info({ jiraKey, from: fromStatus, to: toStatus }, 'processando transição');
 
   // 1. Idempotência — rejeita regressões ou movimentos sem progresso
   if (fromStatus && toStatus) {
@@ -25,29 +27,28 @@ async function processJob(job: Job<OrchestratorJobData>) {
     const toOrder = getStateOrder(toStatus);
 
     if (fromOrder !== -1 && toOrder !== -1 && toOrder <= fromOrder) {
-      console.warn(
-        `[orchestrator] ${jiraKey} ignorado — transição retroativa (${fromStatus} → ${toStatus})`,
-      );
+      log.warn({ jiraKey, from: fromStatus, to: toStatus }, 'transição retroativa ignorada');
       return { skipped: true, reason: 'retrograde_transition' };
     }
   }
 
   // 2. Upsert da story no banco
   const story = await upsertStory(job.data);
-  console.log(`[orchestrator] story upserted — id: ${story.id} :: ${jiraKey}`);
+  log.debug({ jiraKey, storyId: story.id }, 'story persistida');
 
   // 3. Decide ação via máquina de estados
   const action = handleTransition(toStatus ?? '');
 
-  const actionDesc = 'description' in action ? action.description : `status desconhecido: "${action.status}"`;
-  console.log(
-    `[orchestrator] ação: ${action.type}${
-      action.type === 'invoke_agent'
-        ? ` (${action.agent})`
-        : action.type === 'human_gate'
-          ? ` (gate ${action.gate}/5)`
-          : ''
-    } — ${actionDesc}`,
+  log.info(
+    {
+      jiraKey,
+      storyId: story.id,
+      actionType: action.type,
+      ...(action.type === 'invoke_agent' && { agent: action.agent }),
+      ...(action.type === 'human_gate' && { gate: action.gate }),
+      ...(action.type === 'unknown' && { unknownStatus: action.status }),
+    },
+    'ação determinada',
   );
 
   // 4. Registra run do orquestrador no banco
@@ -68,26 +69,23 @@ async function processJob(job: Job<OrchestratorJobData>) {
       break;
 
     case 'human_gate':
-      console.log(
-        `[orchestrator] ${jiraKey} — aguardando aprovação humana (gate ${action.gate}/5)`,
-      );
+      log.info({ jiraKey, gate: action.gate }, 'aguardando aprovação humana');
       break;
 
     case 'in_progress':
-      console.log(`[orchestrator] ${jiraKey} — em progresso, sem ação`);
+      log.debug({ jiraKey }, 'em progresso — sem ação');
       break;
 
     case 'terminal':
-      console.log(`[orchestrator] ${jiraKey} — concluído!`);
+      log.info({ jiraKey }, 'história concluída');
       break;
 
     case 'unknown':
-      console.warn(
-        `[orchestrator] ${jiraKey} — status desconhecido: "${action.status}"`,
-      );
+      log.warn({ jiraKey, status: action.status }, 'status desconhecido recebido');
       break;
   }
 
+  log.info({ jiraKey, storyId: story.id, durationMs: Date.now() - t0 }, 'job processado');
   return { action, storyId: story.id };
 }
 
@@ -104,9 +102,9 @@ async function dispatchAgent(
   if (moveTo) {
     try {
       await moveCardTo(jiraKey, moveTo);
-      console.log(`[orchestrator] ${jiraKey} movido para "${moveTo}"`);
+      log.info({ jiraKey, moveTo }, 'card movido no Jira');
     } catch (err) {
-      console.error(`[orchestrator] falha ao mover ${jiraKey} para "${moveTo}":`, (err as Error).message);
+      log.error({ jiraKey, moveTo, err: (err as Error).message }, 'falha ao mover card');
       throw err;
     }
   }
@@ -123,7 +121,7 @@ async function dispatchAgent(
     .returning({ id: schema.agentRuns.id });
 
   const agentRunId = agentRun!.id;
-  console.log(`[orchestrator] run pendente criado — agente "${agent}", runId: ${agentRunId}`);
+  log.info({ jiraKey, agent, agentRunId }, 'run pendente registrado');
 
   // 3. Enfileira na fila do agente correspondente
   switch (agent) {
@@ -133,11 +131,11 @@ async function dispatchAgent(
         { storyId, jiraKey, agentRunId, summary: jobData.summary, fromStatus: jobData.fromStatus },
         { jobId: `po-${jiraKey}-${agentRunId}` },
       );
-      console.log(`[orchestrator] job enfileirado em "agent:po" para ${jiraKey}`);
+      log.info({ jiraKey, agentRunId, queue: 'agent-po' }, 'job enfileirado para agente PO');
       break;
 
     default:
-      console.warn(`[orchestrator] agente "${agent}" ainda não implementado — run registrado como pendente`);
+      log.warn({ jiraKey, agent }, 'agente ainda não implementado');
   }
 }
 
@@ -147,28 +145,24 @@ export function createOrchestratorWorker() {
   const worker = new Worker<OrchestratorJobData>(
     'orchestrator',
     processJob,
-    {
-      connection: redisConnection,
-      concurrency: 5,
-    },
+    { connection: redisConnection, concurrency: 5 },
   );
 
   worker.on('completed', (job, result) => {
-    console.log(`[orchestrator] job ${job.id} concluído:`, JSON.stringify(result));
+    log.info({ jobId: job.id, result }, 'job concluído');
   });
 
   worker.on('failed', (job, err) => {
-    console.error(
-      `[orchestrator] job ${job?.id} falhou (tentativa ${job?.attemptsMade}/${job?.opts.attempts}):`,
-      err.message,
+    log.error(
+      { jobId: job?.id, attempt: job?.attemptsMade, maxAttempts: job?.opts.attempts, err: err.message },
+      'job falhou',
     );
   });
 
   worker.on('error', (err) => {
-    console.error('[orchestrator] erro no worker:', err.message);
+    log.error({ err: err.message }, 'erro no worker');
   });
 
-  console.log('[orchestrator] worker iniciado — aguardando jobs');
-
+  log.info('worker iniciado — aguardando jobs');
   return worker;
 }
