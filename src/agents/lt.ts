@@ -72,6 +72,7 @@ Sua missão é transformar um PRD em um plano de execução técnico detalhado c
 - Critérios de aceite técnicos e verificáveis (ex: "endpoint retorna 201 com schema X")
 - Identificar quais tasks podem ser executadas em paralelo
 - Se o PRD mencionar rate limiting, segurança ou logging como requisito, incluir task dedicada
+- Ao criar workers BullMQ em qualquer task, especificar o nome exato da fila usando kebab-case SEM dois-pontos (ex: 'auth-maintenance', NUNCA 'auth:maintenance')
 
 ## Estrutura obrigatória do PLANO_DE_EXECUCAO.md (siga exatamente)
 
@@ -115,12 +116,15 @@ Sua missão é transformar um PRD em um plano de execução técnico detalhado c
 
 ## Ordem de Execução
 
+Ondas de execução paralela:
+
 \`\`\`
-TASK-01 ──► TASK-02 ──► TASK-04
-            TASK-03 ──┘
+Onda 1 (paralelo): TASK-01, TASK-02
+Onda 2 (paralelo): TASK-03, TASK-04
+Onda 3 (sequencial): TASK-05
 \`\`\`
 
-(Tasks na mesma coluna podem rodar em paralelo)
+(Use SEMPRE o modelo de ondas — nunca diagrama ASCII com setas. Agrupe as tasks por onda de acordo com suas dependências. Tasks sem dependências formam a Onda 1; tasks que dependem da Onda 1 formam a Onda 2; e assim por diante. Se uma onda tiver apenas uma task, escreva "(sequencial)" em vez de "(paralelo)".)
 
 ## Estimativa Total
 - Tasks P (< 2h): {N} tasks
@@ -137,7 +141,8 @@ TASK-01 ──► TASK-02 ──► TASK-04
 - Mínimo 3 tasks, máximo 15
 - Toda task com critério de aceite técnico mensurável
 - Toda task com estimativa e lista de arquivos afetados
-- Diagrama de dependências obrigatório
+- Modelo de ondas de execução obrigatório (NUNCA diagrama ASCII com setas)
+- Antes de escrever a Estimativa Total, conte manualmente as tasks de cada porte (P, M, G) e verifique que o número declarado bate EXATAMENTE com a quantidade de tasks listadas — erros de contagem não são aceitáveis
 - Retorne APENAS o conteúdo markdown do plano, sem texto adicional antes ou depois`;
 
 // ─── Definição das ferramentas ────────────────────────────────────────────────
