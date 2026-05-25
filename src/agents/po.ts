@@ -4,6 +4,7 @@ import { db, schema } from '../db/index';
 import { updateStoryStatus, updateStoryDescription } from '../db/stories';
 import { redisConnection } from '../queue/index';
 import { getIssue, moveCardTo, addComment } from '../jira/client';
+import { commitFile } from '../github/client';
 import { childLogger } from '../lib/logger';
 
 const log = childLogger({ module: 'agent.po' });
@@ -135,7 +136,29 @@ async function processPoJob(job: Job<PoAgentJobData>): Promise<unknown> {
 
   jobLog.info({ artifactId: artifact!.id, filePath: `${jiraKey}/PRD.md` }, 'artifact PRD salvo');
 
-  // 5. Move card Jira para "Aguardando Aceite PRD"
+  // 5. Commita PRD.md no repositório GitHub
+  let githubCommitSha: string | undefined;
+  try {
+    const commitResult = await commitFile(
+      `${jiraKey}/PRD.md`,
+      prdContent,
+      `docs(${jiraKey}): PRD gerado pelo Agente PO (stub)\n\n[Agente PO v0.1-stub] — Squad Agêntica`,
+    );
+    githubCommitSha = commitResult.sha;
+
+    // Atualiza artifact com o SHA do commit
+    await db
+      .update(schema.artifacts)
+      .set({ githubCommitSha })
+      .where(eq(schema.artifacts.id, artifact!.id));
+
+    jobLog.info({ githubCommitSha, commitUrl: commitResult.url }, 'PRD.md commitado no GitHub');
+  } catch (err) {
+    // Commit GitHub falhou — não bloqueia o fluxo (artifact já está no banco)
+    jobLog.warn({ err: (err as Error).message }, 'falha ao commitar no GitHub — continuando');
+  }
+
+  // 6. Move card Jira para "Aguardando Aceite PRD"
   try {
     await moveCardTo(jiraKey, 'Aguardando Aceite PRD');
     jobLog.info({ to: 'Aguardando Aceite PRD' }, 'card movido no Jira');
@@ -167,7 +190,7 @@ async function processPoJob(job: Job<PoAgentJobData>): Promise<unknown> {
   // 7. Marca run como 'completed'
   const completedAt = new Date();
   const durationMs = completedAt.getTime() - startedAt.getTime();
-  const output = { artifactId: artifact!.id, filePath: `${jiraKey}/PRD.md` };
+  const output = { artifactId: artifact!.id, filePath: `${jiraKey}/PRD.md`, githubCommitSha };
 
   await db
     .update(schema.agentRuns)
