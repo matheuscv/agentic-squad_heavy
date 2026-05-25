@@ -8,6 +8,7 @@ setDefaultResultOrder('ipv4first');
 import express, { type Request, type Response } from 'express';
 import { Pool } from 'pg';
 import IORedis from 'ioredis';
+import jiraWebhookRouter from './webhooks/jira';
 
 const app = express();
 const port = Number(process.env.PORT ?? 3000);
@@ -41,6 +42,8 @@ redis.on('error', (err: Error) => {
 });
 
 // ─── Rotas ────────────────────────────────────────────────────────────────────
+
+app.use('/webhooks', jiraWebhookRouter);
 
 app.get('/health', async (_req: Request, res: Response) => {
   const checks: Record<string, 'ok' | 'error'> = {};
