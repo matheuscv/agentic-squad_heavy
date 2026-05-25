@@ -1,6 +1,10 @@
 import { config } from 'dotenv';
 config();
 
+// Render free tier não suporta IPv6 de saída — força resolução DNS para IPv4
+import { setDefaultResultOrder } from 'dns';
+setDefaultResultOrder('ipv4first');
+
 import express, { type Request, type Response } from 'express';
 import { Pool } from 'pg';
 import IORedis from 'ioredis';
