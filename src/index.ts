@@ -10,6 +10,7 @@ import { Pool } from 'pg';
 import IORedis from 'ioredis';
 import jiraWebhookRouter from './webhooks/jira';
 import { createOrchestratorWorker, createReconciler } from './orchestrator';
+import { createPoAgentWorker } from './agents/po';
 
 const app = express();
 const port = Number(process.env.PORT ?? 3000);
@@ -81,6 +82,7 @@ app.get('/health', async (_req: Request, res: Response) => {
 // ─── Inicialização ────────────────────────────────────────────────────────────
 
 const orchestratorWorker = createOrchestratorWorker();
+const poAgentWorker = createPoAgentWorker();
 const reconcilerInterval = createReconciler();
 
 const server = app.listen(port, () => {
@@ -93,7 +95,12 @@ const shutdown = async (signal: string) => {
   console.log(`[server] ${signal} recebido — encerrando...`);
   server.close(async () => {
     clearInterval(reconcilerInterval);
-    await Promise.allSettled([dbPool.end(), redis.quit(), orchestratorWorker.close()]);
+    await Promise.allSettled([
+      dbPool.end(),
+      redis.quit(),
+      orchestratorWorker.close(),
+      poAgentWorker.close(),
+    ]);
     console.log('[server] encerrado com sucesso');
     process.exit(0);
   });

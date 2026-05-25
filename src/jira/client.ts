@@ -145,6 +145,25 @@ export async function addComment(issueKey: string, text: string): Promise<void> 
 }
 
 /**
+ * Move o card para um status pelo nome (ex: "Aguardando Aceite PRD").
+ * Chama getTransitions internamente para resolver o transitionId.
+ * Lança erro se a transição não estiver disponível no estado atual do card.
+ */
+export async function moveCardTo(issueKey: string, targetStatusName: string): Promise<void> {
+  const transitions = await getTransitions(issueKey);
+  const transition = transitions.find((t) => t.to.name === targetStatusName);
+
+  if (!transition) {
+    const available = transitions.map((t) => t.to.name).join(', ');
+    throw new Error(
+      `Transição para "${targetStatusName}" indisponível em ${issueKey}. Disponíveis: ${available}`,
+    );
+  }
+
+  await transitionIssue(issueKey, transition.id);
+}
+
+/**
  * Busca todas as issues ativas de um projeto (exclui Backlog e Concluído).
  * Usado pelo reconciler para comparar estado do banco vs Jira.
  */

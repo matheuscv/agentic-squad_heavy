@@ -2,11 +2,14 @@ import { Worker, type Job } from 'bullmq';
 import { sql } from 'drizzle-orm';
 import { db, schema } from '../db/index';
 import { redisConnection, type OrchestratorJobData } from '../queue/index';
+import { moveCardTo } from '../jira/client';
+import { poAgentQueue } from '../agents/po';
 import {
   handleTransition,
   getStateOrder,
   isKnownStatus,
   JIRA_TO_DB_STATUS,
+  type JiraStatus,
 } from './state-machine';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -97,7 +100,7 @@ async function processJob(job: Job<OrchestratorJobData>) {
   // 5. Despacha ação
   switch (action.type) {
     case 'invoke_agent':
-      await dispatchAgent(action.agent, story.id, jiraKey, job.data);
+      await dispatchAgent(action.agent, story.id, jiraKey, job.data, action.moveTo);
       break;
 
     case 'human_gate':
@@ -124,29 +127,54 @@ async function processJob(job: Job<OrchestratorJobData>) {
   return { action, storyId: story.id };
 }
 
-// ─── Stub de dispatch de agentes (implementado nas Fases 2-3) ─────────────────
+// ─── Dispatch de agentes ──────────────────────────────────────────────────────
 
 async function dispatchAgent(
   agent: string,
   storyId: string,
   jiraKey: string,
   jobData: OrchestratorJobData,
+  moveTo?: JiraStatus,
 ) {
-  console.log(
-    `[orchestrator] [STUB] invocar agente "${agent}" para ${jiraKey} (storyId: ${storyId})`,
-  );
+  // 1. Move o card no Jira se a transição exigir (ex: "A Refinar" → "Em Refinamento")
+  if (moveTo) {
+    try {
+      await moveCardTo(jiraKey, moveTo);
+      console.log(`[orchestrator] ${jiraKey} movido para "${moveTo}"`);
+    } catch (err) {
+      console.error(`[orchestrator] falha ao mover ${jiraKey} para "${moveTo}":`, (err as Error).message);
+      throw err;
+    }
+  }
 
-  // Registra run pendente do agente no banco para rastreabilidade
-  await db.insert(schema.agentRuns).values({
-    storyId,
-    agentType: agent as typeof schema.agentRuns.$inferInsert['agentType'],
-    status: 'pending',
-    input: { jiraKey, fromStatus: jobData.fromStatus, toStatus: jobData.toStatus },
-  });
+  // 2. Registra run pendente no banco e obtém ID para rastreamento
+  const [agentRun] = await db
+    .insert(schema.agentRuns)
+    .values({
+      storyId,
+      agentType: agent as typeof schema.agentRuns.$inferInsert['agentType'],
+      status: 'pending',
+      input: { jiraKey, fromStatus: jobData.fromStatus, toStatus: jobData.toStatus },
+    })
+    .returning({ id: schema.agentRuns.id });
 
-  console.log(
-    `[orchestrator] [STUB] run pendente registrado para agente "${agent}"`,
-  );
+  const agentRunId = agentRun!.id;
+  console.log(`[orchestrator] run pendente criado — agente "${agent}", runId: ${agentRunId}`);
+
+  // 3. Enfileira na fila do agente correspondente
+  switch (agent) {
+    case 'po':
+      await poAgentQueue.add(
+        'po:run',
+        { storyId, jiraKey, agentRunId, summary: jobData.summary, fromStatus: jobData.fromStatus },
+        { jobId: `po-${jiraKey}-${agentRunId}` },
+      );
+      console.log(`[orchestrator] job enfileirado em "agent:po" para ${jiraKey}`);
+      break;
+
+    default:
+      console.warn(`[orchestrator] agente "${agent}" ainda não implementado — run registrado como pendente`);
+  }
 }
 
 // ─── Criação do Worker ────────────────────────────────────────────────────────
