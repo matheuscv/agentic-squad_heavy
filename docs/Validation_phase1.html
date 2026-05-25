@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Validação — Fase 1 | Squad Agêntica</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0f1117;
+      color: #e2e8f0;
+      line-height: 1.65;
+      padding: 2rem;
+    }
+
+    .container { max-width: 860px; margin: 0 auto; }
+
+    /* Header */
+    header {
+      border-bottom: 2px solid #2d3748;
+      padding-bottom: 1.5rem;
+      margin-bottom: 2rem;
+    }
+    header h1 { font-size: 1.75rem; color: #63b3ed; letter-spacing: -0.5px; }
+    header p { color: #718096; margin-top: 0.4rem; font-size: 0.95rem; }
+    .badge {
+      display: inline-block;
+      background: #1a472a;
+      color: #68d391;
+      border: 1px solid #2f855a;
+      padding: 0.2rem 0.65rem;
+      border-radius: 9999px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      margin-top: 0.6rem;
+    }
+
+    /* Warning */
+    .warning {
+      background: #2d1a00;
+      border: 1px solid #c05621;
+      border-left: 4px solid #ed8936;
+      border-radius: 6px;
+      padding: 1rem 1.25rem;
+      margin-bottom: 2rem;
+    }
+    .warning strong { color: #ed8936; display: block; margin-bottom: 0.4rem; font-size: 0.95rem; }
+    .warning code {
+      display: block;
+      background: #1a0f00;
+      padding: 0.5rem 0.75rem;
+      border-radius: 4px;
+      font-family: 'Fira Code', 'Cascadia Code', monospace;
+      font-size: 0.88rem;
+      margin: 0.35rem 0;
+      color: #fbd38d;
+    }
+    .warning code .wrong  { color: #fc8181; text-decoration: line-through; }
+    .warning code .right  { color: #68d391; }
+
+    /* Steps */
+    .step {
+      background: #1a202c;
+      border: 1px solid #2d3748;
+      border-radius: 8px;
+      padding: 1.25rem 1.5rem;
+      margin-bottom: 1.25rem;
+    }
+    .step-header {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 0.85rem;
+    }
+    .step-num {
+      background: #2b6cb0;
+      color: #ebf8ff;
+      width: 2rem;
+      height: 2rem;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 0.9rem;
+      flex-shrink: 0;
+    }
+    .step h2 { font-size: 1.05rem; color: #90cdf4; }
+    .step p, .step li { color: #cbd5e0; font-size: 0.92rem; }
+    .step ul, .step ol { padding-left: 1.25rem; }
+    .step li { margin-top: 0.4rem; }
+
+    /* Flow diagram */
+    .flow {
+      background: #171923;
+      border: 1px solid #2d3748;
+      border-radius: 6px;
+      padding: 1rem 1.25rem;
+      font-family: 'Fira Code', 'Cascadia Code', monospace;
+      font-size: 0.88rem;
+      color: #a0aec0;
+      margin: 0.85rem 0;
+      line-height: 1.9;
+    }
+    .flow .auto  { color: #63b3ed; }
+    .flow .human { color: #f6ad55; }
+    .flow .stop  { color: #68d391; font-weight: 600; }
+
+    /* Results table */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+      margin-top: 0.85rem;
+    }
+    th {
+      background: #2d3748;
+      color: #a0aec0;
+      text-align: left;
+      padding: 0.6rem 0.85rem;
+      font-weight: 600;
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    td {
+      padding: 0.65rem 0.85rem;
+      border-bottom: 1px solid #2d3748;
+      color: #cbd5e0;
+      vertical-align: top;
+    }
+    tr:last-child td { border-bottom: none; }
+    td a { color: #63b3ed; text-decoration: none; }
+    td a:hover { text-decoration: underline; }
+
+    /* Checklist */
+    .checklist { list-style: none; padding: 0; margin-top: 0.85rem; }
+    .checklist li {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.6rem;
+      padding: 0.5rem 0;
+      border-bottom: 1px solid #2d3748;
+      font-size: 0.9rem;
+      color: #cbd5e0;
+    }
+    .checklist li:last-child { border-bottom: none; }
+    .checklist li::before {
+      content: '☐';
+      color: #4a5568;
+      font-size: 1.1rem;
+      line-height: 1.2;
+      flex-shrink: 0;
+    }
+
+    /* Code inline */
+    code {
+      background: #2d3748;
+      color: #f6e05e;
+      padding: 0.1em 0.4em;
+      border-radius: 3px;
+      font-family: 'Fira Code', 'Cascadia Code', monospace;
+      font-size: 0.85em;
+    }
+
+    /* Section title */
+    .section-title {
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: #4a5568;
+      margin: 2rem 0 0.75rem;
+    }
+
+    footer {
+      margin-top: 2.5rem;
+      padding-top: 1rem;
+      border-top: 1px solid #2d3748;
+      color: #4a5568;
+      font-size: 0.8rem;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <header>
+    <h1>Validação — Fase 1</h1>
+    <p>Roteiro para testar o fluxo ponta a ponta da Squad Agêntica</p>
+    <span class="badge">Fase 1 — Webhook + Orquestrador + Agente PO stub</span>
+  </header>
+
+  <!-- WARNING -->
+  <div class="warning">
+    <strong>⚠️ Pré-requisito crítico — corrigir GITHUB_OWNER antes de testar</strong>
+    O valor atual no <code>.env</code> e no Render está incorreto:
+    <code><span class="wrong">GITHUB_OWNER=https://github.com/matheuscv/agentic-squad_heavy</span></code>
+    <code><span class="right">GITHUB_OWNER=matheuscv</span></code>
+    Com o valor errado, o commit do <code>PRD.md</code> falha silenciosamente (o Agente PO captura o erro e continua, mas o arquivo não é commitado).<br><br>
+    <strong>Ação:</strong> Render → agentic-squad-heavy → Environment → altere <code>GITHUB_OWNER</code> para <code>matheuscv</code> e aguarde o redeploy automático.
+  </div>
+
+  <!-- STEP 1 -->
+  <p class="section-title">Roteiro de teste</p>
+
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">1</div>
+      <h2>Criar a história no Jira</h2>
+    </div>
+    <ol>
+      <li>Abra <a href="https://matheuscv.atlassian.net" target="_blank">matheuscv.atlassian.net</a> → projeto <strong>SCRUM</strong></li>
+      <li>Crie um novo Issue do tipo <strong>Story</strong> (ou Task) com qualquer título<br>
+          Ex: <em>"Teste Fase 1 — Squad Agêntica"</em></li>
+      <li>A história nasce em <strong>Backlog</strong> — nada acontece ainda (comportamento correto)</li>
+    </ol>
+  </div>
+
+  <!-- STEP 2 -->
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">2</div>
+      <h2>Disparar o fluxo automático</h2>
+    </div>
+    <p>No board do Jira, mova o card de <strong>Backlog → A Refinar</strong>.</p>
+    <p style="margin-top:0.6rem; color:#718096; font-size:0.85rem;">
+      Isso dispara o webhook para o serviço em Render, que enfileira o job no BullMQ e inicia o fluxo automático.
+    </p>
+  </div>
+
+  <!-- STEP 3 -->
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">3</div>
+      <h2>Fluxo automático esperado (~10–30 segundos)</h2>
+    </div>
+    <div class="flow">
+      <span class="human">Backlog</span><br>
+      &nbsp;&nbsp;└─ <span class="human">[você move]</span> → <span class="human">A Refinar</span><br>
+      &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└─ <span class="auto">[orquestrador]</span> → <span class="auto">Em Refinamento</span> &nbsp;&nbsp;&nbsp;<span style="color:#4a5568">← moveCardTo automático</span><br>
+      &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└─ <span class="auto">[Agente PO]</span> → <span class="stop">Aguardando Aceite PRD</span> &nbsp;<span style="color:#4a5568">← gera PRD.md, commita, comenta</span>
+    </div>
+    <p>O card <strong>para</strong> em <strong>Aguardando Aceite PRD</strong> e não avança mais automaticamente — gate humano 1/5.</p>
+  </div>
+
+  <!-- STEP 4 -->
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">4</div>
+      <h2>Onde ver os resultados</h2>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>O quê</th>
+          <th>Onde verificar</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Logs em tempo real</strong></td>
+          <td>Render → agentic-squad-heavy → <strong>Logs</strong><br>
+              Filtre pelo <code>jiraKey</code> da história (ex: <code>SCRUM-42</code>)</td>
+        </tr>
+        <tr>
+          <td><strong>Card movido</strong></td>
+          <td>Jira board — card deve estar em <strong>Aguardando Aceite PRD</strong></td>
+        </tr>
+        <tr>
+          <td><strong>Comentário do bot</strong></td>
+          <td>Abra o card no Jira → aba <strong>Comments</strong><br>
+              Mensagem: <em>"🤖 Agente PO (stub) concluiu a geração do PRD"</em></td>
+        </tr>
+        <tr>
+          <td><strong>PRD.md no GitHub</strong></td>
+          <td><a href="https://github.com/matheuscv/agentic-squad_heavy" target="_blank">github.com/matheuscv/agentic-squad_heavy</a><br>
+              Pasta <code>SCRUM-NNN/PRD.md</code></td>
+        </tr>
+        <tr>
+          <td><strong>Artifact no banco</strong></td>
+          <td>Supabase → Table Editor → tabela <code>artifacts</code><br>
+              Filtro: <code>file_path = 'SCRUM-NNN/PRD.md'</code><br>
+              Coluna <code>github_commit_sha</code> deve estar preenchida</td>
+        </tr>
+        <tr>
+          <td><strong>Execução do agente</strong></td>
+          <td>Supabase → tabela <code>agent_runs</code><br>
+              Filtro: <code>agent_type = 'po'</code> e <code>status = 'completed'</code></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- CHECKLIST -->
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">5</div>
+      <h2>Checklist de aceite</h2>
+    </div>
+    <ul class="checklist">
+      <li>Card em <strong>Aguardando Aceite PRD</strong> no Jira</li>
+      <li>Comentário do bot visível no card (<em>🤖 Agente PO (stub)…</em>)</li>
+      <li>Arquivo <code>SCRUM-NNN/PRD.md</code> criado no repositório GitHub</li>
+      <li>Linha em <code>artifacts</code> com <code>github_commit_sha</code> preenchido</li>
+      <li>Linha em <code>agent_runs</code> com <code>status = 'completed'</code> e <code>duration_ms</code> registrado</li>
+      <li>Nenhum log de erro crítico no Render (warnings de comentário Jira são tolerados)</li>
+    </ul>
+  </div>
+
+  <footer>
+    Squad Agêntica — Fase 1 &nbsp;|&nbsp; Gerado em 2026-05-25 &nbsp;|&nbsp; agentic-squad-heavy.onrender.com
+  </footer>
+
+</div>
+</body>
+</html>
