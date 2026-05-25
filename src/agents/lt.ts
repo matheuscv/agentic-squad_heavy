@@ -271,92 +271,107 @@ async function processLtJob(job: Job<LtAgentJobData>): Promise<unknown> {
     .set({ status: 'running', startedAt })
     .where(eq(schema.agentRuns.id, agentRunId));
 
-  // 2. Gera PLANO_DE_EXECUCAO.md via Claude (tool-use loop)
-  const planContent = await runLtAgent(jiraKey, summary, agentRunId);
-  jobLog.info({ planLength: planContent.length }, 'PLANO_DE_EXECUCAO.md gerado pelo Claude');
-
-  // 3. Salva artifact no banco
-  const planFilePath = `${jiraKey}/PLANO_DE_EXECUCAO.md`;
-  const [artifact] = await db
-    .insert(schema.artifacts)
-    .values({
-      storyId,
-      agentRunId,
-      artifactType: 'execution_plan',
-      filePath: planFilePath,
-      content: planContent,
-    })
-    .returning({ id: schema.artifacts.id });
-
-  jobLog.info({ artifactId: artifact!.id, filePath: planFilePath }, 'artifact salvo no banco');
-
-  // 4. Commita no mesmo branch do PRD (prd/<jiraKey>)
-  const branch = `prd/${jiraKey.toLowerCase()}`;
-  let githubCommitSha: string | undefined;
-  let planGithubUrl: string | undefined;
-
   try {
-    const commitResult = await commitFile(
-      planFilePath,
-      planContent,
-      `docs(${jiraKey}): plano de execução gerado pelo Agente LT\n\n[Agente LT v1.0] — Squad Agêntica`,
-      branch,
-    );
-    githubCommitSha = commitResult.sha;
-    planGithubUrl = `https://github.com/${process.env.GITHUB_OWNER}/${process.env.GITHUB_REPO}/blob/${branch}/${planFilePath}`;
+    // 2. Gera PLANO_DE_EXECUCAO.md via Claude (tool-use loop)
+    const planContent = await runLtAgent(jiraKey, summary, agentRunId);
+    jobLog.info({ planLength: planContent.length }, 'PLANO_DE_EXECUCAO.md gerado pelo Claude');
+
+    // 3. Salva artifact no banco
+    const planFilePath = `${jiraKey}/PLANO_DE_EXECUCAO.md`;
+    const [artifact] = await db
+      .insert(schema.artifacts)
+      .values({
+        storyId,
+        agentRunId,
+        artifactType: 'execution_plan',
+        filePath: planFilePath,
+        content: planContent,
+      })
+      .returning({ id: schema.artifacts.id });
+
+    jobLog.info({ artifactId: artifact!.id, filePath: planFilePath }, 'artifact salvo no banco');
+
+    // 4. Commita no mesmo branch do PRD (prd/<jiraKey>)
+    const branch = `prd/${jiraKey.toLowerCase()}`;
+    let githubCommitSha: string | undefined;
+    let planGithubUrl: string | undefined;
+
+    try {
+      const commitResult = await commitFile(
+        planFilePath,
+        planContent,
+        `docs(${jiraKey}): plano de execução gerado pelo Agente LT\n\n[Agente LT v1.0] — Squad Agêntica`,
+        branch,
+      );
+      githubCommitSha = commitResult.sha;
+      planGithubUrl = `https://github.com/${process.env.GITHUB_OWNER}/${process.env.GITHUB_REPO}/blob/${branch}/${planFilePath}`;
+
+      await db
+        .update(schema.artifacts)
+        .set({ githubCommitSha })
+        .where(eq(schema.artifacts.id, artifact!.id));
+
+      jobLog.info({ githubCommitSha, branch, planGithubUrl }, 'PLANO_DE_EXECUCAO.md commitado no GitHub');
+    } catch (err) {
+      jobLog.warn({ err: (err as Error).message }, 'falha ao commitar no GitHub — continuando');
+    }
+
+    // 5. Move card Jira para "Aguardando Aceite Plano"
+    try {
+      await moveCardTo(jiraKey, 'Aguardando Aceite Plano');
+      jobLog.info({ to: 'Aguardando Aceite Plano' }, 'card movido no Jira');
+    } catch (err) {
+      jobLog.error({ err: (err as Error).message }, 'falha ao mover card — abortando');
+      throw err;
+    }
+
+    // 6. Sincroniza status no banco
+    await updateStoryStatus(jiraKey, 'Aguardando Aceite Plano', {
+      lastAgentType: 'lt',
+      lastAgentRunId: agentRunId,
+    });
+
+    // 7. Comenta no Jira com link para o plano
+    const githubLink = planGithubUrl ? `\n\n📎 Plano no GitHub: ${planGithubUrl}` : '';
+    const comment =
+      `🤖 *Agente LT* concluiu a decomposição técnica.\n\n` +
+      `📋 Artifact: \`${planFilePath}\`` +
+      githubLink +
+      `\n\nAguardando revisão e aprovação do Tech Lead humano (Gate 2/5).`;
+
+    try {
+      await addComment(jiraKey, comment);
+      jobLog.debug('comentário adicionado no Jira');
+    } catch (err) {
+      jobLog.warn({ err: (err as Error).message }, 'falha ao comentar — fluxo não interrompido');
+    }
+
+    // 8. Marca run como 'completed'
+    const completedAt = new Date();
+    const durationMs = completedAt.getTime() - startedAt.getTime();
+    const output = { artifactId: artifact!.id, filePath: planFilePath, githubCommitSha, branch };
 
     await db
-      .update(schema.artifacts)
-      .set({ githubCommitSha })
-      .where(eq(schema.artifacts.id, artifact!.id));
+      .update(schema.agentRuns)
+      .set({ status: 'completed', output, durationMs, completedAt })
+      .where(eq(schema.agentRuns.id, agentRunId));
 
-    jobLog.info({ githubCommitSha, branch, planGithubUrl }, 'PLANO_DE_EXECUCAO.md commitado no GitHub');
-  } catch (err) {
-    jobLog.warn({ err: (err as Error).message }, 'falha ao commitar no GitHub — continuando');
-  }
+    jobLog.info({ durationMs, branch }, 'agente LT concluído');
+    return output;
 
-  // 5. Move card Jira para "Aguardando Aceite Plano"
-  try {
-    await moveCardTo(jiraKey, 'Aguardando Aceite Plano');
-    jobLog.info({ to: 'Aguardando Aceite Plano' }, 'card movido no Jira');
   } catch (err) {
-    jobLog.error({ err: (err as Error).message }, 'falha ao mover card — abortando');
+    const errorMessage = (err as Error).message;
+    const completedAt = new Date();
+    const durationMs = completedAt.getTime() - startedAt.getTime();
+
+    await db
+      .update(schema.agentRuns)
+      .set({ status: 'failed', errorMessage, durationMs, completedAt })
+      .where(eq(schema.agentRuns.id, agentRunId));
+
+    jobLog.error({ err: errorMessage, durationMs, attempt: job.attemptsMade + 1 }, 'agente LT falhou');
     throw err;
   }
-
-  // 6. Sincroniza status no banco
-  await updateStoryStatus(jiraKey, 'Aguardando Aceite Plano', {
-    lastAgentType: 'lt',
-    lastAgentRunId: agentRunId,
-  });
-
-  // 7. Comenta no Jira com link para o plano
-  const githubLink = planGithubUrl ? `\n\n📎 Plano no GitHub: ${planGithubUrl}` : '';
-  const comment =
-    `🤖 *Agente LT* concluiu a decomposição técnica.\n\n` +
-    `📋 Artifact: \`${planFilePath}\`` +
-    githubLink +
-    `\n\nAguardando revisão e aprovação do Tech Lead humano (Gate 2/5).`;
-
-  try {
-    await addComment(jiraKey, comment);
-    jobLog.debug('comentário adicionado no Jira');
-  } catch (err) {
-    jobLog.warn({ err: (err as Error).message }, 'falha ao comentar — fluxo não interrompido');
-  }
-
-  // 8. Marca run como 'completed'
-  const completedAt = new Date();
-  const durationMs = completedAt.getTime() - startedAt.getTime();
-  const output = { artifactId: artifact!.id, filePath: planFilePath, githubCommitSha, branch };
-
-  await db
-    .update(schema.agentRuns)
-    .set({ status: 'completed', output, durationMs, completedAt })
-    .where(eq(schema.agentRuns.id, agentRunId));
-
-  jobLog.info({ durationMs, branch }, 'agente LT concluído');
-  return output;
 }
 
 // ─── Criação do Worker ────────────────────────────────────────────────────────

@@ -280,109 +280,124 @@ async function processPoJob(job: Job<PoAgentJobData>): Promise<unknown> {
     .set({ status: 'running', startedAt })
     .where(eq(schema.agentRuns.id, agentRunId));
 
-  // 2. Persiste descrição Jira (melhor esforço — agente lerá via ferramenta)
   try {
-    const issue = await getIssue(jiraKey);
-    const description = extractTextFromAdf(issue.fields.description);
-    if (description) {
-      await updateStoryDescription(jiraKey, description);
-      jobLog.debug({ descriptionLength: description.length }, 'descrição Jira persistida');
+    // 2. Persiste descrição Jira (melhor esforço — agente lerá via ferramenta)
+    try {
+      const issue = await getIssue(jiraKey);
+      const description = extractTextFromAdf(issue.fields.description);
+      if (description) {
+        await updateStoryDescription(jiraKey, description);
+        jobLog.debug({ descriptionLength: description.length }, 'descrição Jira persistida');
+      }
+    } catch (err) {
+      jobLog.warn({ err: (err as Error).message }, 'falha ao pré-carregar descrição — Claude buscará via ferramenta');
     }
-  } catch (err) {
-    jobLog.warn({ err: (err as Error).message }, 'falha ao pré-carregar descrição — Claude buscará via ferramenta');
-  }
 
-  // 3. Gera PRD via Claude (tool-use loop)
-  const prdContent = await runPoAgent(jiraKey, summary, agentRunId);
-  jobLog.info({ prdLength: prdContent.length }, 'PRD.md gerado pelo Claude');
+    // 3. Gera PRD via Claude (tool-use loop)
+    const prdContent = await runPoAgent(jiraKey, summary, agentRunId);
+    jobLog.info({ prdLength: prdContent.length }, 'PRD.md gerado pelo Claude');
 
-  // 4. Salva artifact no banco
-  const prdFilePath = `${jiraKey}/PRD.md`;
-  const [artifact] = await db
-    .insert(schema.artifacts)
-    .values({
-      storyId,
-      agentRunId,
-      artifactType: 'prd',
-      filePath: prdFilePath,
-      content: prdContent,
-    })
-    .returning({ id: schema.artifacts.id });
+    // 4. Salva artifact no banco
+    const prdFilePath = `${jiraKey}/PRD.md`;
+    const [artifact] = await db
+      .insert(schema.artifacts)
+      .values({
+        storyId,
+        agentRunId,
+        artifactType: 'prd',
+        filePath: prdFilePath,
+        content: prdContent,
+      })
+      .returning({ id: schema.artifacts.id });
 
-  jobLog.info({ artifactId: artifact!.id, filePath: prdFilePath }, 'artifact PRD salvo no banco');
+    jobLog.info({ artifactId: artifact!.id, filePath: prdFilePath }, 'artifact PRD salvo no banco');
 
-  // 5. Cria branch e commita PRD.md
-  const branch = `prd/${jiraKey.toLowerCase()}`;
-  let githubCommitSha: string | undefined;
-  let prdGithubUrl: string | undefined;
+    // 5. Cria branch e commita PRD.md
+    const branch = `prd/${jiraKey.toLowerCase()}`;
+    let githubCommitSha: string | undefined;
+    let prdGithubUrl: string | undefined;
 
-  try {
-    await createBranch(branch);
-    jobLog.debug({ branch }, 'branch criado');
+    try {
+      await createBranch(branch);
+      jobLog.debug({ branch }, 'branch criado');
 
-    const commitResult = await commitFile(
-      prdFilePath,
-      prdContent,
-      `docs(${jiraKey}): PRD gerado pelo Agente PO\n\n[Agente PO v2.0] — Squad Agêntica`,
-      branch,
-    );
-    githubCommitSha = commitResult.sha;
-    prdGithubUrl = `https://github.com/${process.env.GITHUB_OWNER}/${process.env.GITHUB_REPO}/blob/${branch}/${prdFilePath}`;
+      const commitResult = await commitFile(
+        prdFilePath,
+        prdContent,
+        `docs(${jiraKey}): PRD gerado pelo Agente PO\n\n[Agente PO v2.0] — Squad Agêntica`,
+        branch,
+      );
+      githubCommitSha = commitResult.sha;
+      prdGithubUrl = `https://github.com/${process.env.GITHUB_OWNER}/${process.env.GITHUB_REPO}/blob/${branch}/${prdFilePath}`;
+
+      await db
+        .update(schema.artifacts)
+        .set({ githubCommitSha })
+        .where(eq(schema.artifacts.id, artifact!.id));
+
+      jobLog.info({ githubCommitSha, branch, prdGithubUrl }, 'PRD.md commitado no GitHub');
+    } catch (err) {
+      jobLog.warn({ err: (err as Error).message }, 'falha ao commitar no GitHub — continuando');
+    }
+
+    // 6. Move card Jira para "Aguardando Aceite PRD"
+    try {
+      await moveCardTo(jiraKey, 'Aguardando Aceite PRD');
+      jobLog.info({ to: 'Aguardando Aceite PRD' }, 'card movido no Jira');
+    } catch (err) {
+      jobLog.error({ err: (err as Error).message }, 'falha ao mover card — abortando');
+      throw err;
+    }
+
+    // 7. Sincroniza status no banco
+    await updateStoryStatus(jiraKey, 'Aguardando Aceite PRD', {
+      lastAgentType: 'po',
+      lastAgentRunId: agentRunId,
+    });
+
+    // 8. Comenta no Jira com link para o PRD
+    const githubLink = prdGithubUrl
+      ? `\n\n📎 PRD no GitHub: ${prdGithubUrl}`
+      : '';
+    const comment =
+      `🤖 *Agente PO* concluiu a geração do PRD.\n\n` +
+      `📄 Artifact: \`${prdFilePath}\`` +
+      githubLink +
+      `\n\nAguardando revisão e aprovação do PO humano (Gate 1/5).`;
+
+    try {
+      await addComment(jiraKey, comment);
+      jobLog.debug('comentário adicionado no Jira');
+    } catch (err) {
+      jobLog.warn({ err: (err as Error).message }, 'falha ao comentar — fluxo não interrompido');
+    }
+
+    // 9. Marca run como 'completed'
+    const completedAt = new Date();
+    const durationMs = completedAt.getTime() - startedAt.getTime();
+    const output = { artifactId: artifact!.id, filePath: prdFilePath, githubCommitSha, branch };
 
     await db
-      .update(schema.artifacts)
-      .set({ githubCommitSha })
-      .where(eq(schema.artifacts.id, artifact!.id));
+      .update(schema.agentRuns)
+      .set({ status: 'completed', output, durationMs, completedAt })
+      .where(eq(schema.agentRuns.id, agentRunId));
 
-    jobLog.info({ githubCommitSha, branch, prdGithubUrl }, 'PRD.md commitado no GitHub');
-  } catch (err) {
-    jobLog.warn({ err: (err as Error).message }, 'falha ao commitar no GitHub — continuando');
-  }
+    jobLog.info({ durationMs, branch }, 'agente PO concluído');
+    return output;
 
-  // 6. Move card Jira para "Aguardando Aceite PRD"
-  try {
-    await moveCardTo(jiraKey, 'Aguardando Aceite PRD');
-    jobLog.info({ to: 'Aguardando Aceite PRD' }, 'card movido no Jira');
   } catch (err) {
-    jobLog.error({ err: (err as Error).message }, 'falha ao mover card — abortando');
+    const errorMessage = (err as Error).message;
+    const completedAt = new Date();
+    const durationMs = completedAt.getTime() - startedAt.getTime();
+
+    await db
+      .update(schema.agentRuns)
+      .set({ status: 'failed', errorMessage, durationMs, completedAt })
+      .where(eq(schema.agentRuns.id, agentRunId));
+
+    jobLog.error({ err: errorMessage, durationMs, attempt: job.attemptsMade + 1 }, 'agente PO falhou');
     throw err;
   }
-
-  // 7. Sincroniza status no banco
-  await updateStoryStatus(jiraKey, 'Aguardando Aceite PRD', {
-    lastAgentType: 'po',
-    lastAgentRunId: agentRunId,
-  });
-
-  // 8. Comenta no Jira com link para o PRD
-  const githubLink = prdGithubUrl
-    ? `\n\n📎 PRD no GitHub: ${prdGithubUrl}`
-    : '';
-  const comment =
-    `🤖 *Agente PO* concluiu a geração do PRD.\n\n` +
-    `📄 Artifact: \`${prdFilePath}\`` +
-    githubLink +
-    `\n\nAguardando revisão e aprovação do PO humano (Gate 1/5).`;
-
-  try {
-    await addComment(jiraKey, comment);
-    jobLog.debug('comentário adicionado no Jira');
-  } catch (err) {
-    jobLog.warn({ err: (err as Error).message }, 'falha ao comentar — fluxo não interrompido');
-  }
-
-  // 9. Marca run como 'completed'
-  const completedAt = new Date();
-  const durationMs = completedAt.getTime() - startedAt.getTime();
-  const output = { artifactId: artifact!.id, filePath: prdFilePath, githubCommitSha, branch };
-
-  await db
-    .update(schema.agentRuns)
-    .set({ status: 'completed', output, durationMs, completedAt })
-    .where(eq(schema.agentRuns.id, agentRunId));
-
-  jobLog.info({ durationMs, branch }, 'agente PO concluído');
-  return output;
 }
 
 // ─── Criação do Worker ────────────────────────────────────────────────────────
