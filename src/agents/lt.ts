@@ -10,6 +10,17 @@ import { childLogger } from '../lib/logger';
 
 const log = childLogger({ module: 'agent.lt' });
 
+/** Remove preâmbulo e blocos de código que o modelo pode adicionar antes/ao redor do markdown. */
+function extractMarkdownContent(raw: string): string {
+  const fenceMatch = raw.match(/```(?:markdown)?\r?\n([\s\S]*?)\r?\n```/);
+  if (fenceMatch?.[1]) return fenceMatch[1].trim();
+
+  const headingIndex = raw.search(/(^|\n)# /);
+  if (headingIndex > 0) return raw.slice(headingIndex).replace(/^\n/, '').trim();
+
+  return raw.trim();
+}
+
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
 export type LtAgentJobData = {
@@ -38,19 +49,29 @@ const LT_SYSTEM_PROMPT = `Você é um Tech Lead sênior com mais de 12 anos de e
 Sua missão é transformar um PRD em um plano de execução técnico detalhado com tasks numeradas, estimativas e mapa de dependências.
 
 ## Processo obrigatório
-1. Leia o PRD da história com read_github_file (informe o branch correto)
+1. Leia o PRD da história com read_github_file (informe o branch e o caminho corretos)
 2. Leia o README.md para identificar a stack tecnológica existente
-3. Se existir src/db/schema.ts, leia-o para entender o modelo de dados atual
-4. Analise as informações e decomponha o PRD em tasks técnicas TASK-XX
-5. Gere o PLANO_DE_EXECUCAO.md seguindo EXATAMENTE a estrutura abaixo
+3. Leia o package.json para identificar dependências e frameworks instalados
+4. Se existir src/db/schema.ts, leia-o para entender o modelo de dados atual
+5. Se existir src/index.ts, leia-o para entender a estrutura do servidor
+6. Analise as informações e decomponha o PRD em tasks técnicas TASK-XX
+7. Gere o PLANO_DE_EXECUCAO.md seguindo EXATAMENTE a estrutura abaixo
+
+## REGRAS DE FORMATO — OBRIGATÓRIAS
+- Responda SOMENTE com o conteúdo markdown do plano, começando diretamente com "# Plano de Execução —"
+- NÃO escreva nenhum texto antes do heading — sem introduções, sem comentários sobre arquivos encontrados ou não
+- NÃO envolva o conteúdo em blocos de código (não use \`\`\`markdown)
+- NÃO escreva nada após o "## Referências" final
+- Se um arquivo não for encontrado, use o que tiver disponível e não mencione isso
 
 ## Critérios de qualidade das tasks
 - Cada task deve ser implementável por um único desenvolvedor em no máximo 1 dia
-- Tasks claras o suficiente para serem implementadas sem ambiguidade
-- Dependências explícitas entre tasks (TASK-XX depende de TASK-YY)
+- Tasks de utilitários puros (ex: módulo de hash de senha, módulo JWT) NÃO dependem do schema do banco — declare como independentes quando for o caso
+- Dependências explícitas entre tasks (TASK-XX depende de TASK-YY) somente quando houver dependência técnica real
 - Estimativas realistas: P (< 2h), M (2–4h), G (4–8h)
 - Critérios de aceite técnicos e verificáveis (ex: "endpoint retorna 201 com schema X")
 - Identificar quais tasks podem ser executadas em paralelo
+- Se o PRD mencionar rate limiting, segurança ou logging como requisito, incluir task dedicada
 
 ## Estrutura obrigatória do PLANO_DE_EXECUCAO.md (siga exatamente)
 
@@ -153,13 +174,17 @@ async function runLtAgent(
   const model = process.env.ANTHROPIC_MODEL ?? 'claude-opus-4-7';
   const prdBranch = `prd/${jiraKey.toLowerCase()}`;
 
+  const today = new Date().toISOString().split('T')[0];
+
   const messages: Anthropic.MessageParam[] = [
     {
       role: 'user',
-      content: `Gere o PLANO_DE_EXECUCAO.md para a história ${jiraKey}: "${summary}".
+      content: `Data atual: ${today}
+Gere o PLANO_DE_EXECUCAO.md para a história ${jiraKey}: "${summary}".
 
 O PRD desta história está em: arquivo "${jiraKey}/PRD.md", branch "${prdBranch}".
-Use as ferramentas disponíveis para coletar o contexto necessário antes de escrever.`,
+Use as ferramentas disponíveis para coletar o contexto necessário antes de escrever.
+Lembre-se: responda APENAS com o markdown do plano, começando com "# Plano de Execução —".`,
     },
   ];
 
@@ -183,12 +208,13 @@ Use as ferramentas disponíveis para coletar o contexto necessário antes de esc
     messages.push({ role: 'assistant', content: response.content });
 
     if (response.stop_reason === 'end_turn') {
-      const planContent = response.content
+      const raw = response.content
         .filter((b): b is Anthropic.TextBlock => b.type === 'text')
         .map((b) => b.text)
         .join('');
 
-      if (!planContent.trim()) throw new Error('Claude retornou plano vazio');
+      const planContent = extractMarkdownContent(raw);
+      if (!planContent) throw new Error('Claude retornou plano vazio');
       return planContent;
     }
 

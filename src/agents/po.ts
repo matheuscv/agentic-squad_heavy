@@ -42,6 +42,19 @@ function extractTextFromAdf(adf: unknown): string {
   return children.map(extractTextFromAdf).join('');
 }
 
+/** Remove preâmbulo e blocos de código que o modelo pode adicionar antes/ao redor do markdown. */
+function extractMarkdownContent(raw: string): string {
+  // Caso 1: modelo envolveu em ```markdown ... ```
+  const fenceMatch = raw.match(/```(?:markdown)?\r?\n([\s\S]*?)\r?\n```/);
+  if (fenceMatch?.[1]) return fenceMatch[1].trim();
+
+  // Caso 2: há texto antes do primeiro heading — descarta o preâmbulo
+  const headingIndex = raw.search(/(^|\n)# /);
+  if (headingIndex > 0) return raw.slice(headingIndex).replace(/^\n/, '').trim();
+
+  return raw.trim();
+}
+
 // ─── System prompt ────────────────────────────────────────────────────────────
 
 const PO_SYSTEM_PROMPT = `Você é um Product Owner sênior com mais de 10 anos de experiência em produtos B2B SaaS.
@@ -49,9 +62,16 @@ Sua missão é transformar histórias do Jira em PRDs completos, claros e com re
 
 ## Processo obrigatório
 1. Chame get_jira_issue para ler a história completa (descrição, critérios, contexto)
-2. Chame read_github_file com "README.md" para entender o produto
+2. Chame read_github_file com "README.md" para entender o produto e a stack
 3. Se existir docs/GLOSSARIO.md, leia também para alinhar terminologia
 4. Analise as informações coletadas e gere o PRD
+
+## REGRAS DE FORMATO — OBRIGATÓRIAS
+- Responda SOMENTE com o conteúdo markdown do PRD, começando diretamente com "# PRD —"
+- NÃO escreva nenhum texto antes do heading — sem introduções, sem explicações sobre ferramentas usadas
+- NÃO envolva o conteúdo em blocos de código (não use \`\`\`markdown)
+- NÃO escreva nada após o "## Referências" final
+- Se um arquivo não for encontrado, ignore e continue sem mencionar isso
 
 ## Estrutura obrigatória do PRD (siga exatamente)
 
@@ -151,11 +171,15 @@ async function runPoAgent(
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   const model = process.env.ANTHROPIC_MODEL ?? 'claude-opus-4-7';
 
+  const today = new Date().toISOString().split('T')[0];
+
   const messages: Anthropic.MessageParam[] = [
     {
       role: 'user',
-      content: `Gere o PRD completo para a história ${jiraKey}: "${summary}".
-Use as ferramentas disponíveis para coletar o contexto necessário antes de escrever.`,
+      content: `Data atual: ${today}
+Gere o PRD completo para a história ${jiraKey}: "${summary}".
+Use as ferramentas disponíveis para coletar o contexto necessário antes de escrever.
+Lembre-se: responda APENAS com o markdown do PRD, começando com "# PRD —".`,
     },
   ];
 
@@ -179,12 +203,13 @@ Use as ferramentas disponíveis para coletar o contexto necessário antes de esc
 
     // Resposta final — extrai o texto do PRD
     if (response.stop_reason === 'end_turn') {
-      const prdContent = response.content
+      const raw = response.content
         .filter((b): b is Anthropic.TextBlock => b.type === 'text')
         .map((b) => b.text)
         .join('');
 
-      if (!prdContent.trim()) throw new Error('Claude retornou PRD vazio');
+      const prdContent = extractMarkdownContent(raw);
+      if (!prdContent) throw new Error('Claude retornou PRD vazio');
       return prdContent;
     }
 
