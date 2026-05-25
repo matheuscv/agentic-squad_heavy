@@ -168,13 +168,15 @@ export async function moveCardTo(issueKey: string, targetStatusName: string): Pr
  * Usado pelo reconciler para comparar estado do banco vs Jira.
  */
 export async function fetchActiveIssues(projectKey: string): Promise<JiraIssue[]> {
-  const jql = encodeURIComponent(
-    `project = "${projectKey}" AND status NOT IN ("Backlog", "Concluído") ORDER BY updated DESC`,
-  );
-
-  const data = await jiraFetch<JiraSearchResult>(
-    `/rest/api/3/search?jql=${jql}&fields=summary,status&maxResults=50`,
-  );
+  // GET /rest/api/3/search foi removido (410) — migrado para POST /rest/api/3/search/jql
+  const data = await jiraFetch<JiraSearchResult>(`/rest/api/3/search/jql`, {
+    method: 'POST',
+    body: JSON.stringify({
+      jql: `project = "${projectKey}" AND status NOT IN ("Backlog", "Concluído") ORDER BY updated DESC`,
+      fields: ['summary', 'status'],
+      maxResults: 50,
+    }),
+  });
 
   return data.issues;
 }
