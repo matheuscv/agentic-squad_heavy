@@ -1,0 +1,32 @@
+# Credenciais e secrets — NUNCA subir
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+secrets/
+
+# Node
+node_modules/
+dist/
+build/
+.turbo/
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.suo
+*.user
+
+# Temporários
+tmp/
+temp/
+.cache/
