@@ -12,7 +12,7 @@ const log = childLogger({ module: 'agent.lt' });
 
 /** Remove preâmbulo e blocos de código que o modelo pode adicionar antes/ao redor do markdown. */
 function extractMarkdownContent(raw: string): string {
-  const fenceMatch = raw.match(/```(?:markdown)?\r?\n([\s\S]*?)\r?\n```/);
+  const fenceMatch = raw.match(/```markdown\r?\n([\s\S]*?)\r?\n```/);
   if (fenceMatch?.[1]) return fenceMatch[1].trim();
 
   const headingIndex = raw.search(/(^|\n)# /);

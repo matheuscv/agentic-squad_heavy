@@ -44,8 +44,8 @@ function extractTextFromAdf(adf: unknown): string {
 
 /** Remove preâmbulo e blocos de código que o modelo pode adicionar antes/ao redor do markdown. */
 function extractMarkdownContent(raw: string): string {
-  // Caso 1: modelo envolveu em ```markdown ... ```
-  const fenceMatch = raw.match(/```(?:markdown)?\r?\n([\s\S]*?)\r?\n```/);
+  // Caso 1: modelo envolveu em ```markdown ... ``` (especificador obrigatório)
+  const fenceMatch = raw.match(/```markdown\r?\n([\s\S]*?)\r?\n```/);
   if (fenceMatch?.[1]) return fenceMatch[1].trim();
 
   // Caso 2: há texto antes do primeiro heading — descarta o preâmbulo
