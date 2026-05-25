@@ -2,30 +2,20 @@ import pino from 'pino';
 
 // ─── Configuração ─────────────────────────────────────────────────────────────
 //
-// Em produção: JSON para stdout — o Betterstack ingere via log drain do Render.
-// Em desenvolvimento: pino-pretty colorido via worker thread.
+// Sempre emite JSON para stdout — zero dependência de worker threads ou
+// pino-pretty no container, o que garante compatibilidade com Alpine Linux.
 //
-// Para configurar o log drain no Betterstack:
+// Betterstack ingere via log drain do Render (sem código extra):
 //   Dashboard → Sources → Connect source → Render → colar BETTERSTACK_SOURCE_TOKEN
+//
+// Em desenvolvimento, para output legível:
+//   npm run dev | npx pino-pretty --colorize
 
-const isDev = process.env.NODE_ENV !== 'production';
-
-const transport = isDev
-  ? pino.transport({
-      target: 'pino-pretty',
-      options: { colorize: true, ignore: 'pid,hostname', translateTime: 'SYS:HH:MM:ss' },
-    })
-  : undefined;
-
-export const logger = pino(
-  {
-    level: isDev ? 'debug' : 'info',
-    base: { service: 'agentic-squad-heavy' },
-    // Timestamps em ISO-8601 — Betterstack reconhece e indexa automaticamente
-    timestamp: pino.stdTimeFunctions.isoTime,
-  },
-  transport,
-);
+export const logger = pino({
+  level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
+  base: { service: 'agentic-squad-heavy' },
+  timestamp: pino.stdTimeFunctions.isoTime,
+});
 
 // ─── Factory de child loggers com contexto fixo ───────────────────────────────
 
