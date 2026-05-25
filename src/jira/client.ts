@@ -1,17 +1,29 @@
 // ─── Cliente Jira REST API v3 ─────────────────────────────────────────────────
 //
-// Usado pelo reconciler para buscar o estado real dos cards no Jira.
-// Autenticação via Basic Auth (email + API token).
+// Autenticação via Basic Auth (JIRA_EMAIL + JIRA_API_TOKEN).
+// Jira Cloud não suporta HMAC — segredo do webhook é validado via query param.
+
+// ─── Tipos públicos ───────────────────────────────────────────────────────────
 
 export type JiraIssue = {
   id: string;
   key: string;
   fields: {
     summary: string;
+    description?: unknown;
     status: {
       id: string;
       name: string;
     };
+  };
+};
+
+export type JiraTransition = {
+  id: string;
+  name: string;
+  to: {
+    id: string;
+    name: string;
   };
 };
 
@@ -22,6 +34,12 @@ type JiraSearchResult = {
   startAt: number;
 };
 
+type JiraTransitionsResult = {
+  transitions: JiraTransition[];
+};
+
+// ─── Helpers internos ─────────────────────────────────────────────────────────
+
 function getBaseHeaders(): Record<string, string> {
   const email = process.env.JIRA_EMAIL;
   const token = process.env.JIRA_API_TOKEN;
@@ -30,10 +48,8 @@ function getBaseHeaders(): Record<string, string> {
     throw new Error('JIRA_EMAIL e JIRA_API_TOKEN são obrigatórios');
   }
 
-  const credentials = Buffer.from(`${email}:${token}`).toString('base64');
-
   return {
-    Authorization: `Basic ${credentials}`,
+    Authorization: `Basic ${Buffer.from(`${email}:${token}`).toString('base64')}`,
     'Content-Type': 'application/json',
     Accept: 'application/json',
   };
@@ -45,42 +61,101 @@ function getBaseUrl(): string {
   return url.replace(/\/$/, '');
 }
 
-/** Busca todas as issues ativas de um projeto (exclui Backlog e Concluído). */
-export async function fetchActiveIssues(projectKey: string): Promise<JiraIssue[]> {
-  const baseUrl = getBaseUrl();
-  const headers = getBaseHeaders();
+async function jiraFetch<T>(
+  path: string,
+  options: RequestInit = {},
+): Promise<T> {
+  const res = await fetch(`${getBaseUrl()}${path}`, {
+    ...options,
+    headers: { ...getBaseHeaders(), ...(options.headers as Record<string, string> | undefined) },
+  });
 
-  // JQL: issues do projeto que não estão nos extremos do fluxo
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Jira API ${res.status} ${path}: ${body}`);
+  }
+
+  // 204 No Content (transitionIssue, addComment sem corpo de retorno)
+  if (res.status === 204) return undefined as T;
+
+  return res.json() as Promise<T>;
+}
+
+// ─── API pública ──────────────────────────────────────────────────────────────
+
+/**
+ * Busca uma issue pelo key com campos summary, status e description.
+ * Equivale a GET /rest/api/3/issue/{key}
+ */
+export async function getIssue(issueKey: string): Promise<JiraIssue> {
+  return jiraFetch<JiraIssue>(
+    `/rest/api/3/issue/${issueKey}?fields=summary,status,description`,
+  );
+}
+
+/**
+ * Lista as transições disponíveis para a issue no estado atual.
+ * Equivale a GET /rest/api/3/issue/{key}/transitions
+ */
+export async function getTransitions(issueKey: string): Promise<JiraTransition[]> {
+  const data = await jiraFetch<JiraTransitionsResult>(
+    `/rest/api/3/issue/${issueKey}/transitions`,
+  );
+  return data.transitions;
+}
+
+/**
+ * Move o card para o status correspondente ao transitionId.
+ * Use getTransitions() para descobrir o ID antes de chamar.
+ * Equivale a POST /rest/api/3/issue/{key}/transitions
+ */
+export async function transitionIssue(
+  issueKey: string,
+  transitionId: string,
+): Promise<void> {
+  await jiraFetch<undefined>(`/rest/api/3/issue/${issueKey}/transitions`, {
+    method: 'POST',
+    body: JSON.stringify({ transition: { id: transitionId } }),
+  });
+}
+
+/**
+ * Adiciona um comentário (formato Atlassian Document Format — ADF) à issue.
+ * Equivale a POST /rest/api/3/issue/{key}/comment
+ */
+export async function addComment(issueKey: string, text: string): Promise<void> {
+  // Jira Cloud REST v3 exige ADF (não aceita string simples)
+  const adfBody = {
+    body: {
+      type: 'doc',
+      version: 1,
+      content: [
+        {
+          type: 'paragraph',
+          content: [{ type: 'text', text }],
+        },
+      ],
+    },
+  };
+
+  await jiraFetch<undefined>(`/rest/api/3/issue/${issueKey}/comment`, {
+    method: 'POST',
+    body: JSON.stringify(adfBody),
+  });
+}
+
+/**
+ * Busca todas as issues ativas de um projeto (exclui Backlog e Concluído).
+ * Usado pelo reconciler para comparar estado do banco vs Jira.
+ */
+export async function fetchActiveIssues(projectKey: string): Promise<JiraIssue[]> {
   const jql = encodeURIComponent(
     `project = "${projectKey}" AND status NOT IN ("Backlog", "Concluído") ORDER BY updated DESC`,
   );
 
-  const url = `${baseUrl}/rest/api/3/search?jql=${jql}&fields=summary,status&maxResults=50`;
+  const data = await jiraFetch<JiraSearchResult>(
+    `/rest/api/3/search?jql=${jql}&fields=summary,status&maxResults=50`,
+  );
 
-  const res = await fetch(url, { headers });
-
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Jira API ${res.status}: ${body}`);
-  }
-
-  const data = (await res.json()) as JiraSearchResult;
   return data.issues;
-}
-
-/** Busca o estado atual de uma única issue pelo key (ex: SCRUM-10). */
-export async function fetchIssueStatus(issueKey: string): Promise<JiraIssue> {
-  const baseUrl = getBaseUrl();
-  const headers = getBaseHeaders();
-
-  const url = `${baseUrl}/rest/api/3/issue/${issueKey}?fields=summary,status`;
-
-  const res = await fetch(url, { headers });
-
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Jira API ${res.status} para ${issueKey}: ${body}`);
-  }
-
-  return (await res.json()) as JiraIssue;
 }
