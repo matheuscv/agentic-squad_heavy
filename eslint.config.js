@@ -2,6 +2,7 @@
 const eslint = require("@eslint/js");
 const tseslint = require("@typescript-eslint/eslint-plugin");
 const tsparser = require("@typescript-eslint/parser");
+const globals = require("globals");
 
 module.exports = [
   eslint.configs.recommended,
@@ -11,6 +12,9 @@ module.exports = [
       parser: tsparser,
       parserOptions: {
         project: "./tsconfig.json",
+      },
+      globals: {
+        ...globals.node,
       },
     },
     plugins: {
