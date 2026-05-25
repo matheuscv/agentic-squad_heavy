@@ -99,16 +99,73 @@ function getRepoCoords() {
   return { owner, repo };
 }
 
+async function getDefaultBranchSha(token: string): Promise<{ branch: string; sha: string }> {
+  const { owner, repo } = getRepoCoords();
+  const repoData = await githubFetch<{ default_branch: string }>(
+    `/repos/${owner}/${repo}`,
+    token,
+  );
+  const defaultBranch = repoData.default_branch;
+  const refData = await githubFetch<{ object: { sha: string } }>(
+    `/repos/${owner}/${repo}/git/refs/heads/${defaultBranch}`,
+    token,
+  );
+  return { branch: defaultBranch, sha: refData.object.sha };
+}
+
 // ─── API pública ──────────────────────────────────────────────────────────────
 
 /**
+ * Lê o conteúdo de um arquivo do repositório.
+ * Retorna null se o arquivo não existir (404) ou não for um arquivo regular.
+ */
+export async function readFile(filePath: string, branch?: string): Promise<string | null> {
+  const token = await getInstallationToken();
+  const { owner, repo } = getRepoCoords();
+
+  try {
+    const query = branch ? `?ref=${encodeURIComponent(branch)}` : '';
+    const data = await githubFetch<{ type: string; content: string }>(
+      `/repos/${owner}/${repo}/contents/${filePath}${query}`,
+      token,
+    );
+    if (data.type !== 'file') return null;
+    return Buffer.from(data.content.replace(/\n/g, ''), 'base64').toString('utf-8');
+  } catch (err) {
+    if ((err as Error).message.includes('404')) return null;
+    throw err;
+  }
+}
+
+/**
+ * Cria um branch a partir do branch padrão do repositório.
+ * Idempotente: ignora erro 422 (branch já existe) para suportar retries.
+ */
+export async function createBranch(branchName: string): Promise<void> {
+  const token = await getInstallationToken();
+  const { owner, repo } = getRepoCoords();
+  const { sha } = await getDefaultBranchSha(token);
+
+  try {
+    await githubFetch(`/repos/${owner}/${repo}/git/refs`, token, {
+      method: 'POST',
+      body: JSON.stringify({ ref: `refs/heads/${branchName}`, sha }),
+    });
+  } catch (err) {
+    // 422 = branch já existe — idempotente em retries
+    if (!(err as Error).message.includes('422')) throw err;
+  }
+}
+
+/**
  * Cria ou atualiza um arquivo no repositório e retorna o SHA do commit.
- * Autentica via GitHub App JWT + installation token (sem Octokit).
+ * Aceita branch opcional — padrão: branch default do repositório.
  */
 export async function commitFile(
   filePath: string,
   content: string,
   commitMessage: string,
+  branch?: string,
 ): Promise<CommitResult> {
   const token = await getInstallationToken();
   const { owner, repo } = getRepoCoords();
@@ -116,15 +173,15 @@ export async function commitFile(
   // Busca SHA atual do arquivo (necessário para atualização — PUT exige sha)
   let existingSha: string | undefined;
   try {
+    const query = branch ? `?ref=${encodeURIComponent(branch)}` : '';
     const fileData = await githubFetch<{ type: string; sha: string }>(
-      `/repos/${owner}/${repo}/contents/${filePath}`,
+      `/repos/${owner}/${repo}/contents/${filePath}${query}`,
       token,
     );
     if (fileData.type === 'file') existingSha = fileData.sha;
   } catch (err: unknown) {
     const msg = (err as Error).message ?? '';
     if (!msg.includes('404')) throw err;
-    // 404 = arquivo novo, seguir
   }
 
   const result = await githubFetch<{ commit: { sha: string; html_url?: string } }>(
@@ -136,6 +193,7 @@ export async function commitFile(
         message: commitMessage,
         content: Buffer.from(content).toString('base64'),
         ...(existingSha && { sha: existingSha }),
+        ...(branch && { branch }),
       }),
     },
   );
