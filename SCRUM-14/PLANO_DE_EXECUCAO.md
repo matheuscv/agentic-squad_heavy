@@ -1,18 +1,18 @@
-# Plano de Execução — SCRUM-14: Implementar autenticação de usuários com JWT - Teste #2 - Fase 2 - Squad Agêntica
+# Plano de Execução — SCRUM-14: Implementar autenticação de usuários com JWT
 
 ## Identificação
 - **Jira Key**: SCRUM-14
-- **Resumo**: Implementar autenticação de usuários com JWT — endpoint de login, geração/validação de token, middleware de proteção de rotas e refresh token
+- **Resumo**: Implementar autenticação de usuários com JWT - Teste #2 - Fase 2 - Squad Agêntica
 - **Versão**: 1.0
 - **Autor**: Agente LT (IA)
 - **Data**: 2026-05-25
 
 ## Stack Detectada
 - **Runtime**: Node.js 22 / TypeScript 5
-- **Framework**: Express 4.x (tipos @types/express 5)
+- **Framework**: Express 4 (declarado como `^4.21.2` no package.json)
 - **Banco de Dados**: PostgreSQL (Supabase) via Drizzle ORM
 - **Fila**: BullMQ + Redis (Upstash / ioredis)
-- **Testes**: Vitest 3 + v8 coverage
+- **Testes**: Vitest 3 + @vitest/coverage-v8
 - **Logs**: Pino (JSON estruturado)
 - **Validação**: Zod 3
 
@@ -22,26 +22,26 @@
 |----|--------------------|------------|--------------|---------|
 | TASK-01 | Adicionar tabela `users` ao schema Drizzle e gerar migration | M | — | Sim |
 | TASK-02 | Módulo utilitário de hash de senha (bcrypt/argon2) | P | — | Sim |
-| TASK-03 | Módulo utilitário JWT (sign access token + sign refresh token + verify) | P | — | Sim |
-| TASK-04 | Variáveis de ambiente JWT validadas via Zod (`JWT_SECRET`, `JWT_ACCESS_EXPIRES_IN`, `JWT_REFRESH_EXPIRES_IN`) | P | — | Sim |
-| TASK-05 | Repositório de usuários — helper `findUserByEmail` via Drizzle | P | TASK-01 | Não |
-| TASK-06 | Endpoint `POST /auth/login` — validação de credenciais e emissão de tokens | M | TASK-02, TASK-03, TASK-04, TASK-05 | Não |
-| TASK-07 | Middleware de autenticação JWT para rotas protegidas | M | TASK-03, TASK-04 | Não |
-| TASK-08 | Endpoint `POST /auth/refresh` — renovação de access token via refresh token | M | TASK-03, TASK-04, TASK-05 | Não |
-| TASK-09 | Logging de tentativas inválidas de autenticação com Pino (warn) | P | TASK-06, TASK-07 | Não |
-| TASK-10 | Rate limiting no endpoint `/auth/login` (máx. 5 req/60s por IP) | M | TASK-06 | Não |
-| TASK-11 | Testes unitários dos módulos utilitários (hash + JWT) | M | TASK-02, TASK-03 | Sim |
-| TASK-12 | Testes de integração dos endpoints `/auth/login` e `/auth/refresh` + middleware | G | TASK-06, TASK-07, TASK-08 | Não |
+| TASK-03 | Módulo utilitário JWT (sign/verify access & refresh tokens) | P | — | Sim |
+| TASK-04 | Variáveis de ambiente para JWT e validação com Zod | P | — | Sim |
+| TASK-05 | Endpoint `POST /auth/login` | M | TASK-01, TASK-02, TASK-03, TASK-04 | Não |
+| TASK-06 | Endpoint `POST /auth/refresh` | M | TASK-03, TASK-04 | Não |
+| TASK-07 | Middleware de autenticação JWT para rotas protegidas | P | TASK-03 | Não |
+| TASK-08 | Rate limiting no endpoint de login | P | TASK-05 | Não |
+| TASK-09 | Logging de tentativas inválidas de acesso (RF-08) | P | TASK-05, TASK-07 | Não |
+| TASK-10 | Testes unitários e de integração (login, refresh, middleware) | G | TASK-05, TASK-06, TASK-07 | Não |
 
 ## Tasks Detalhadas
 
 ### TASK-01 — Adicionar tabela `users` ao schema Drizzle e gerar migration
-**Descrição**: Estender o arquivo `src/db/schema.ts` com a tabela `users`, contendo os campos: `id` (UUID PK), `email` (text único, not null), `password_hash` (text, not null), `roles` (text array, not null, default `['user']`), `created_at` e `updated_at` (timestamps). Após definir a tabela, executar `npm run db:generate` para gerar o arquivo de migration SQL no diretório `src/db/migrations/` e `npm run db:migrate` para aplicar. Exportar os tipos `User` e `NewUser` inferidos pelo Drizzle.
+**Descrição**: Estender `src/db/schema.ts` com a tabela `users`, contendo os campos: `id` (uuid PK), `email` (text, unique, not null), `password_hash` (text, not null), `roles` (text array, default `['user']`), `created_at` e `updated_at` (timestamps). Exportar os tipos inferidos `User` e `NewUser`. Executar `npm run db:generate` para gerar o arquivo SQL de migration em `src/db/migrations/`. O campo `password_hash` jamais deve expor o valor em logs ou respostas de API — adicionar comentário no schema reforçando esta restrição.
+
 **Arquivos Afetados**:
 - `src/db/schema.ts`
-- `src/db/migrations/<timestamp>_add_users_table.sql` (gerado automaticamente)
+- `src/db/migrations/<timestamp>_add_users_table.sql` *(gerado automaticamente)*
 
-**Critério de Aceite Técnico**: A tabela `users` existe no banco após `db:migrate`; `select * from users limit 1` executa sem erro; o tipo `User` exportado possui os campos `id`, `email`, `passwordHash`, `roles`, `createdAt` e `updatedAt` verificáveis via `tsc --noEmit`.
+**Critério de Aceite Técnico**: `src/db/schema.ts` exporta a tabela `users` com todos os campos especificados; `npm run db:generate` produz migration SQL sem erros; `npm run typecheck` passa sem erros de tipo.
+
 **Estimativa**: M — 2–4h
 **Dependências**: Nenhuma
 **Paralelizável**: Sim
@@ -49,181 +49,169 @@
 ---
 
 ### TASK-02 — Módulo utilitário de hash de senha
-**Descrição**: Criar o módulo `src/lib/password.ts` com duas funções exportadas: `hashPassword(plain: string): Promise<string>` e `verifyPassword(plain: string, hash: string): Promise<boolean>`. Usar a biblioteca `bcryptjs` (instalar como dependência de produção) com custo mínimo de 10 rounds. O módulo não deve importar nenhum módulo do banco de dados. Adicionar `@types/bcryptjs` como devDependency.
-**Arquivos Afetados**:
-- `src/lib/password.ts`
-- `package.json`
+**Descrição**: Criar `src/lib/password.ts` com dois exports: `hashPassword(plain: string): Promise<string>` e `verifyPassword(plain: string, hash: string): Promise<boolean>`. Utilizar `argon2` (preferencialmente) ou `bcrypt` com custo mínimo 10. Instalar a dependência necessária (`argon2` via `npm install argon2`). O módulo não deve importar nada do banco de dados — é um utilitário puro. Adicionar JSDoc explicitando que `plain` nunca deve ser logado.
 
-**Critério de Aceite Técnico**: `hashPassword('secret')` retorna string iniciada com `$2b$10$`; `verifyPassword('secret', hash)` retorna `true`; `verifyPassword('wrong', hash)` retorna `false` — verificável nos testes unitários da TASK-11.
+**Arquivos Afetados**:
+- `src/lib/password.ts` *(novo)*
+- `package.json` *(nova dependência `argon2`)*
+
+**Critério de Aceite Técnico**: `hashPassword('senha123')` retorna string iniciada com `$argon2`; `verifyPassword('senha123', hash)` retorna `true`; `verifyPassword('errada', hash)` retorna `false`; módulo não importa `schema.ts` nem `db/`.
+
 **Estimativa**: P — < 2h
 **Dependências**: Nenhuma
 **Paralelizável**: Sim
 
 ---
 
-### TASK-03 — Módulo utilitário JWT (sign + verify)
-**Descrição**: Criar o módulo `src/lib/jwt.ts` com as funções: `signAccessToken(payload: JwtPayload): string`, `signRefreshToken(userId: string): string` e `verifyToken(token: string): JwtPayload`. O tipo `JwtPayload` deve conter `user_id: string`, `email: string`, `roles: string[]`, `iat?: number` e `exp?: number`. Usar a biblioteca `jsonwebtoken` (instalar como dependência de produção; adicionar `@types/jsonwebtoken` como devDependency). Algoritmo HS256. As configurações de segredo e expiração devem ser lidas do módulo de env (TASK-04), mas como TASK-04 será independente e carregada antes, declarar a dependência no nível de runtime (import), não de compilação — TASK-03 pode ser desenvolvida em paralelo usando valores placeholder para testes unitários.
-**Arquivos Afetados**:
-- `src/lib/jwt.ts`
-- `package.json`
+### TASK-03 — Módulo utilitário JWT (sign/verify)
+**Descrição**: Criar `src/lib/jwt.ts` com as funções: `signAccessToken(payload: JwtUserPayload): string`, `signRefreshToken(userId: string): string` e `verifyToken(token: string, secret: string): JwtUserPayload | RefreshPayload`. O tipo `JwtUserPayload` deve conter `{ user_id: string; email: string; roles: string[] }`. Usar o algoritmo HS256 com `jsonwebtoken` (instalar via `npm install jsonwebtoken` + `@types/jsonwebtoken`). Os segredos e TTLs devem ser recebidos como parâmetro ou lidos do módulo de configuração (TASK-04). Lançar erro tipado `TokenExpiredError` e `JsonWebTokenError` para tratamento nos middlewares.
 
-**Critério de Aceite Técnico**: `signAccessToken({ user_id: 'abc', email: 'x@y.com', roles: ['user'] })` retorna string com 3 segmentos separados por `.`; `verifyToken(token)` retorna o payload original; `verifyToken('token-invalido')` lança `JsonWebTokenError` — verificável nos testes da TASK-11.
+**Arquivos Afetados**:
+- `src/lib/jwt.ts` *(novo)*
+- `package.json` *(novas dependências `jsonwebtoken`, `@types/jsonwebtoken`)*
+
+**Critério de Aceite Técnico**: `signAccessToken({ user_id, email, roles })` retorna JWT decodificável com `jsonwebtoken.decode()`; `verifyToken(token, secret)` lança `TokenExpiredError` para token expirado e `JsonWebTokenError` para token malformado; módulo não importa `schema.ts` nem `db/`.
+
 **Estimativa**: P — < 2h
 **Dependências**: Nenhuma
 **Paralelizável**: Sim
 
 ---
 
-### TASK-04 — Módulo de variáveis de ambiente JWT validadas com Zod
-**Descrição**: Criar o módulo `src/lib/env.ts` que exporta um objeto `env` com todas as variáveis de ambiente da aplicação validadas pelo Zod no momento do boot. O schema Zod deve incluir: `JWT_SECRET` (string, min 32 chars), `JWT_ACCESS_EXPIRES_IN` (string, default `'15m'`), `JWT_REFRESH_EXPIRES_IN` (string, default `'7d'`), além das variáveis já existentes (`DATABASE_URL`, `REDIS_URL`, etc.). O módulo deve lançar erro descritivo em boot caso variáveis obrigatórias estejam ausentes. Atualizar `src/index.ts` para importar `env` deste módulo e remover usos diretos de `process.env` dispersos. Adicionar as novas variáveis ao `.env.example`.
+### TASK-04 — Variáveis de ambiente JWT e validação com Zod
+**Descrição**: Criar `src/config/env.ts` (ou estender um existente) com um schema Zod que valide as variáveis de ambiente relacionadas à autenticação: `JWT_ACCESS_SECRET` (string, min 32 chars), `JWT_REFRESH_SECRET` (string, min 32 chars), `JWT_ACCESS_EXPIRES_IN` (string, default `'15m'`) e `JWT_REFRESH_EXPIRES_IN` (string, default `'7d'`). O módulo deve fazer `parse` no momento da importação e lançar erro descritivo em caso de variável ausente ou inválida, impedindo a inicialização do servidor. Adicionar as variáveis ao `.env.example`.
+
 **Arquivos Afetados**:
-- `src/lib/env.ts` (novo)
+- `src/config/env.ts` *(novo)*
 - `.env.example`
-- `src/index.ts` (ajuste de imports)
 
-**Critério de Aceite Técnico**: Iniciar o servidor sem `JWT_SECRET` lança `ZodError` com mensagem legível antes de abrir a porta; com `JWT_SECRET` de 32+ chars o boot ocorre normalmente; `tsc --noEmit` passa sem erros.
+**Critério de Aceite Técnico**: Importar `src/config/env.ts` sem as variáveis `JWT_ACCESS_SECRET` / `JWT_REFRESH_SECRET` definidas lança `ZodError` com mensagem legível; com variáveis válidas, exporta objeto tipado com os 4 campos; `npm run typecheck` passa.
+
 **Estimativa**: P — < 2h
 **Dependências**: Nenhuma
 **Paralelizável**: Sim
 
 ---
 
-### TASK-05 — Repositório de usuários (`findUserByEmail`)
-**Descrição**: Criar o módulo `src/db/users.ts` com a função `findUserByEmail(email: string, db: NodePgDatabase): Promise<User | undefined>` que executa um `select` via Drizzle ORM na tabela `users`, filtrando por e-mail (case-insensitive via `lower()`). Exportar também `createUser(data: NewUser, db: NodePgDatabase): Promise<User>` para uso em seeds/testes. O `db` deve ser injetado como parâmetro para permitir mock em testes.
+### TASK-05 — Endpoint `POST /auth/login`
+**Descrição**: Criar o router `src/auth/router.ts` e o handler `src/auth/handlers/login.ts`. O endpoint recebe `{ email: string, password: string }` via JSON, valida o schema com Zod (retorna 400 em caso de payload inválido), busca o usuário na tabela `users` pelo e-mail usando Drizzle ORM, compara a senha com `verifyPassword` (TASK-02) e, em caso de sucesso, chama `signAccessToken` e `signRefreshToken` (TASK-03) com os dados do usuário. Resposta de sucesso: HTTP 200 com `{ access_token: string, refresh_token: string, expires_in: number }`. Credenciais inválidas: HTTP 401 com `{ "error": "invalid_credentials" }` — mesma resposta para e-mail inexistente e senha errada (sem vazar qual campo falhou). Registrar o router em `src/index.ts` como `app.use('/auth', authRouter)`.
+
 **Arquivos Afetados**:
-- `src/db/users.ts` (novo)
+- `src/auth/router.ts` *(novo)*
+- `src/auth/handlers/login.ts` *(novo)*
+- `src/index.ts` *(registrar router)*
 
-**Critério de Aceite Técnico**: `findUserByEmail('USER@empresa.com', db)` retorna o registro cujo e-mail é `user@empresa.com`; retorna `undefined` para e-mails inexistentes — verificável via teste de integração na TASK-12.
-**Estimativa**: P — < 2h
-**Dependências**: TASK-01
-**Paralelizável**: Não
+**Critério de Aceite Técnico**: `POST /auth/login` com credenciais válidas retorna HTTP 200 com JSON contendo `access_token` (JWT decodificável) e `refresh_token`; com e-mail inexistente retorna HTTP 401 `{"error":"invalid_credentials"}`; com senha errada retorna HTTP 401 `{"error":"invalid_credentials"}`; com payload malformado retorna HTTP 400.
 
----
-
-### TASK-06 — Endpoint `POST /auth/login`
-**Descrição**: Criar o router `src/auth/router.ts` e registrá-lo no Express em `src/index.ts` sob o prefixo `/auth`. Implementar o handler `POST /auth/login` que: (1) valida o body com Zod (`email: z.string().email()`, `password: z.string().min(1)`) retornando 400 em caso de falha de validação; (2) busca o usuário via `findUserByEmail` — se não encontrado, retorna 401 com `{"error":"invalid_credentials"}`; (3) verifica a senha com `verifyPassword` — se inválida, retorna 401 com `{"error":"invalid_credentials"}`; (4) em caso de sucesso, chama `signAccessToken` e `signRefreshToken` e retorna HTTP 200 com `{"access_token": "...", "refresh_token": "...", "token_type": "Bearer", "expires_in": <segundos>}`. O handler deve receber o `db` pool via closure de fábrica para facilitar testes. Criar `src/auth/index.ts` como barrel.
-**Arquivos Afetados**:
-- `src/auth/router.ts` (novo)
-- `src/auth/index.ts` (novo)
-- `src/index.ts` (registro do router)
-
-**Critério de Aceite Técnico**: `POST /auth/login` com credenciais válidas retorna HTTP 200 com JSON contendo `access_token` decodificável com o `JWT_SECRET` correto e payload com `user_id`, `email`, `roles`; credenciais inválidas retornam HTTP 401 com `{"error":"invalid_credentials"}` sem vazar qual campo está errado; body malformado retorna HTTP 400.
 **Estimativa**: M — 2–4h
-**Dependências**: TASK-02, TASK-03, TASK-04, TASK-05
+**Dependências**: TASK-01, TASK-02, TASK-03, TASK-04
 **Paralelizável**: Não
 
 ---
 
-### TASK-07 — Middleware de autenticação JWT para rotas protegidas
-**Descrição**: Criar o middleware `src/auth/middleware.ts` com a função `requireAuth`: lê o header `Authorization`, extrai o Bearer token, chama `verifyToken` e em caso de sucesso injeta o payload em `req.user` (estender a tipagem do Express `Request` via `declaration merging` em `src/types/express.d.ts`). Se o header estiver ausente, retorna 401 com `{"error":"missing_token"}`; se o token for inválido ou expirado, retorna 401 com `{"error":"invalid_token"}`. Aplicar o middleware na rota de health check como demonstração de uso protegido (rota `GET /protected/ping` criada apenas para validação).
-**Arquivos Afetados**:
-- `src/auth/middleware.ts` (novo)
-- `src/types/express.d.ts` (novo — declaration merging de `req.user`)
-- `src/index.ts` (registro da rota de demonstração)
+### TASK-06 — Endpoint `POST /auth/refresh`
+**Descrição**: Criar o handler `src/auth/handlers/refresh.ts`. O endpoint recebe `{ refresh_token: string }` via JSON, valida com Zod, chama `verifyToken` do módulo JWT (TASK-03) usando `JWT_REFRESH_SECRET`. Se o token for válido, extrai o `user_id`, consulta o usuário no banco para confirmar existência (evitar refresh de usuário deletado), e retorna HTTP 200 com `{ access_token: string, expires_in: number }`. Em caso de token inválido ou expirado, retorna HTTP 401 com `{ "error": "invalid_token" }`. Registrar a rota em `src/auth/router.ts`.
 
-**Critério de Aceite Técnico**: `GET /protected/ping` sem header retorna 401 `{"error":"missing_token"}`; com `Authorization: Bearer <token-invalido>` retorna 401 `{"error":"invalid_token"}`; com token válido retorna 200; `tsc --noEmit` reconhece `req.user` como `JwtPayload` sem erros de tipo.
+**Arquivos Afetados**:
+- `src/auth/handlers/refresh.ts` *(novo)*
+- `src/auth/router.ts` *(adicionar rota `POST /refresh`)*
+
+**Critério de Aceite Técnico**: `POST /auth/refresh` com refresh token válido retorna HTTP 200 com novo `access_token` JWT; com token expirado retorna HTTP 401 `{"error":"invalid_token"}`; com token malformado retorna HTTP 401 `{"error":"invalid_token"}`; com payload faltando `refresh_token` retorna HTTP 400.
+
 **Estimativa**: M — 2–4h
 **Dependências**: TASK-03, TASK-04
 **Paralelizável**: Não
 
 ---
 
-### TASK-08 — Endpoint `POST /auth/refresh`
-**Descrição**: Adicionar o handler `POST /auth/refresh` ao router de autenticação (`src/auth/router.ts`). O endpoint: (1) valida o body com Zod (`refresh_token: z.string().min(1)`); (2) chama `verifyToken` no refresh token recebido — se inválido/expirado, retorna 401 com `{"error":"invalid_refresh_token"}`; (3) busca o usuário pelo `user_id` extraído do payload do refresh token via nova função `findUserById` no `src/db/users.ts`; (4) se o usuário existir, emite um novo access token e retorna HTTP 200 com `{"access_token":"...", "token_type":"Bearer", "expires_in":<segundos>}`.
+### TASK-07 — Middleware de autenticação JWT para rotas protegidas
+**Descrição**: Criar `src/auth/middleware/authenticate.ts` exportando um middleware Express `authenticate`. O middleware extrai o token do header `Authorization: Bearer <token>`, chama `verifyToken` (TASK-03) com `JWT_ACCESS_SECRET`, e em caso de sucesso injeta o payload decodificado em `res.locals.user` (tipado como `JwtUserPayload`). Se o header estiver ausente, malformado, ou o token for inválido/expirado, retorna imediatamente HTTP 401 com `{ "error": "unauthorized" }`. Exportar também o tipo `AuthenticatedLocals` para uso pelos handlers protegidos. Criar `src/auth/middleware/index.ts` re-exportando o middleware.
+
 **Arquivos Afetados**:
-- `src/auth/router.ts` (adição de handler)
-- `src/db/users.ts` (adição de `findUserById`)
+- `src/auth/middleware/authenticate.ts` *(novo)*
+- `src/auth/middleware/index.ts` *(novo)*
 
-**Critério de Aceite Técnico**: `POST /auth/refresh` com refresh token válido retorna HTTP 200 com novo `access_token` decodificável com payload correto; token inválido ou expirado retorna HTTP 401 com `{"error":"invalid_refresh_token"}`; body malformado retorna HTTP 400.
-**Estimativa**: M — 2–4h
-**Dependências**: TASK-03, TASK-04, TASK-05
-**Paralelizável**: Não
+**Critério de Aceite Técnico**: Rota protegida com `authenticate` retorna HTTP 401 quando `Authorization` header está ausente; retorna HTTP 401 para token expirado; retorna HTTP 401 para token malformado; permite requisição e popula `res.locals.user` corretamente com token válido.
 
----
-
-### TASK-09 — Logging de tentativas inválidas de autenticação com Pino
-**Descrição**: Instrumentar os pontos de falha de autenticação com logs Pino no nível `warn`, usando child loggers (`logger.child({ module: 'auth' })`). Nos handlers de login: logar e-mail (não a senha), IP de origem (`req.ip`) e timestamp quando as credenciais forem inválidas. No middleware JWT: logar a rota acessada (`req.path`), IP e motivo de rejeição (token ausente vs. inválido), sem logar o token completo (apenas os primeiros 10 chars + `...`). Garantir que nenhum campo sensível (senha, token completo) seja incluído nos logs.
-**Arquivos Afetados**:
-- `src/auth/router.ts` (adição de chamadas ao logger)
-- `src/auth/middleware.ts` (adição de chamadas ao logger)
-
-**Critério de Aceite Técnico**: Ao fornecer credenciais inválidas no login, o stdout em formato JSON contém `{"level":"warn","module":"auth","email":"...","ip":"...","msg":"invalid credentials attempt"}`; nenhuma linha de log contém a senha ou o token JWT completo — verificável via inspeção de output de teste.
 **Estimativa**: P — < 2h
-**Dependências**: TASK-06, TASK-07
+**Dependências**: TASK-03
 **Paralelizável**: Não
 
 ---
 
-### TASK-10 — Rate limiting no endpoint `/auth/login`
-**Descrição**: Instalar e configurar o pacote `express-rate-limit` (dependência de produção). Criar o middleware de rate limit `authRateLimiter` em `src/auth/middleware.ts` com janela de 60 segundos e máximo de 5 requisições por IP. Aplicar exclusivamente na rota `POST /auth/login`. Quando o limite for excedido, retornar HTTP 429 com body `{"error":"too_many_requests","retry_after":<segundos>}`. Documentar a variável de ambiente `AUTH_RATE_LIMIT_MAX` (opcional, default 5) no `.env.example` e no módulo `src/lib/env.ts` para configurabilidade futura.
+### TASK-08 — Rate limiting no endpoint de login
+**Descrição**: Instalar `express-rate-limit` (`npm install express-rate-limit`) e criar `src/auth/middleware/rateLimiter.ts` com um limiter configurado para máximo de 5 requisições por IP em janela de 60 segundos, retornando HTTP 429 com `{ "error": "too_many_requests" }` ao exceder o limite. Aplicar o limiter exclusivamente na rota `POST /auth/login` em `src/auth/router.ts`. O limiter deve usar o header padrão `RateLimit-*` (RFC 6585) na resposta. A janela e o limite devem ser configuráveis via variáveis de ambiente `LOGIN_RATE_LIMIT_WINDOW_MS` (default `60000`) e `LOGIN_RATE_LIMIT_MAX` (default `5`), adicionadas ao `src/config/env.ts` e ao `.env.example`.
+
 **Arquivos Afetados**:
-- `src/auth/middleware.ts` (adição de `authRateLimiter`)
-- `src/auth/router.ts` (aplicação do middleware)
-- `src/lib/env.ts` (variável `AUTH_RATE_LIMIT_MAX` opcional)
+- `src/auth/middleware/rateLimiter.ts` *(novo)*
+- `src/auth/router.ts` *(aplicar limiter na rota de login)*
+- `src/config/env.ts` *(novas variáveis)*
 - `.env.example`
-- `package.json`
+- `package.json` *(nova dependência `express-rate-limit`)*
 
-**Critério de Aceite Técnico**: Após 5 requisições `POST /auth/login` do mesmo IP em menos de 60 segundos, a 6ª retorna HTTP 429 com `{"error":"too_many_requests"}`; as primeiras 5 requisições seguem o fluxo normal (200 ou 401 conforme credenciais).
-**Estimativa**: M — 2–4h
-**Dependências**: TASK-06
+**Critério de Aceite Técnico**: Após 5 requisições consecutivas ao `POST /auth/login` pelo mesmo IP, a 6ª retorna HTTP 429 com `{"error":"too_many_requests"}`; requisições a outras rotas não são afetadas pelo limiter; header `RateLimit-Remaining` presente nas respostas.
+
+**Estimativa**: P — < 2h
+**Dependências**: TASK-05
 **Paralelizável**: Não
 
 ---
 
-### TASK-11 — Testes unitários dos módulos utilitários (hash + JWT)
-**Descrição**: Criar os arquivos de teste Vitest para os módulos puros, sem dependência de banco ou rede. Em `src/lib/password.test.ts`: testar `hashPassword` (formato do hash), `verifyPassword` com senha correta (true) e incorreta (false), e garantir que `hashPassword` nunca retorna a string original. Em `src/lib/jwt.test.ts`: testar `signAccessToken` (formato do token, claims presentes), `verifyToken` com token válido (payload correto), `verifyToken` com token manipulado (lança erro) e `verifyToken` com token expirado (lança `TokenExpiredError`). Usar `vi.useFakeTimers()` para simular expiração de token. Cobertura de branches ≥ 90% nos dois módulos.
-**Arquivos Afetados**:
-- `src/lib/password.test.ts` (novo)
-- `src/lib/jwt.test.ts` (novo)
+### TASK-09 — Logging de tentativas inválidas de acesso
+**Descrição**: Integrar logs Pino (usando o `logger` existente em `src/lib/logger.ts`) em dois pontos: (1) no handler de login (`src/auth/handlers/login.ts`), registrar `logger.warn` em caso de credenciais inválidas com campos `{ route: 'POST /auth/login', ip: req.ip, timestamp }`; (2) no middleware `authenticate` (`src/auth/middleware/authenticate.ts`), registrar `logger.warn` em caso de token inválido/expirado com campos `{ route: req.path, method: req.method, ip: req.ip, reason: 'token_expired' | 'token_invalid' | 'missing_token', timestamp }`. Em ambos os casos, garantir que o token completo e a senha **nunca** apareçam no log. Adicionar child logger com `module: 'auth'`.
 
-**Critério de Aceite Técnico**: `npm test` executa todos os testes de `password.test.ts` e `jwt.test.ts` sem falhas; `npm run test:coverage` mostra cobertura de branches ≥ 90% nos dois arquivos; nenhum teste depende de conexão com banco ou rede.
-**Estimativa**: M — 2–4h
-**Dependências**: TASK-02, TASK-03
-**Paralelizável**: Sim
+**Arquivos Afetados**:
+- `src/auth/handlers/login.ts` *(adicionar warn log)*
+- `src/auth/middleware/authenticate.ts` *(adicionar warn log)*
+
+**Critério de Aceite Técnico**: Ao tentar login com credenciais inválidas, linha JSON de log com `level: 'warn'` e `module: 'auth'` é emitida para stdout sem conter os campos `password` ou `password_hash`; ao acessar rota protegida com token expirado, linha JSON de log com `reason: 'token_expired'` é emitida sem conter o token.
+
+**Estimativa**: P — < 2h
+**Dependências**: TASK-05, TASK-07
+**Paralelizável**: Não
 
 ---
 
-### TASK-12 — Testes de integração dos endpoints de autenticação e middleware
-**Descrição**: Criar `src/auth/auth.integration.test.ts` usando Vitest com supertest (instalar como devDependency). Configurar um banco de dados de teste (via `DATABASE_URL` de um schema isolado ou SQLite em modo compatível) e popular com um usuário seed usando `createUser` + `hashPassword`. Cobrir os cenários: (1) login com credenciais válidas → 200 com tokens decodificáveis; (2) login com senha errada → 401 `invalid_credentials`; (3) login com e-mail inexistente → 401 `invalid_credentials`; (4) login com body inválido → 400; (5) rota protegida sem token → 401; (6) rota protegida com token válido → 200; (7) rota protegida com token expirado → 401; (8) refresh com token válido → 200 com novo access token; (9) refresh com token inválido → 401.
-**Arquivos Afetados**:
-- `src/auth/auth.integration.test.ts` (novo)
-- `package.json` (adição de `supertest` e `@types/supertest`)
+### TASK-10 — Testes unitários e de integração
+**Descrição**: Criar suite de testes com Vitest cobrindo os módulos críticos de autenticação. Testes unitários para `src/lib/password.ts` (hash e verify) e `src/lib/jwt.ts` (sign, verify, expiração). Testes de integração usando `supertest` (`npm install -D supertest @types/supertest`) para os endpoints: `POST /auth/login` (sucesso, credencial inválida, payload malformado), `POST /auth/refresh` (sucesso, token expirado, token malformado) e rota protegida com middleware `authenticate` (com/sem token, token expirado). Mockar a camada de banco de dados com `vi.mock` para isolar os handlers. Cobertura mínima de 80% das linhas nos arquivos de `src/auth/` e `src/lib/password.ts` + `src/lib/jwt.ts`, verificada via `npm run test:coverage`.
 
-**Critério de Aceite Técnico**: `npm test` executa todos os 9 cenários listados sem falhas; os testes são determinísticos (sem dependência de estado externo não controlado); o tempo total de execução dos testes de integração é inferior a 30 segundos.
+**Arquivos Afetados**:
+- `src/lib/password.test.ts` *(novo)*
+- `src/lib/jwt.test.ts` *(novo)*
+- `src/auth/handlers/login.test.ts` *(novo)*
+- `src/auth/handlers/refresh.test.ts` *(novo)*
+- `src/auth/middleware/authenticate.test.ts` *(novo)*
+- `package.json` *(novas devDependencies `supertest`, `@types/supertest`)*
+
+**Critério de Aceite Técnico**: `npm test` passa com 0 falhas; `npm run test:coverage` reporta ≥ 80% de cobertura de linhas para todos os arquivos em `src/auth/`, `src/lib/password.ts` e `src/lib/jwt.ts`; testes de integração validam os status codes HTTP e schemas de resposta JSON descritos nos critérios de aceite do PRD (CA-01 a CA-05).
+
 **Estimativa**: G — 4–8h
-**Dependências**: TASK-06, TASK-07, TASK-08
+**Dependências**: TASK-05, TASK-06, TASK-07
 **Paralelizável**: Não
 
 ## Ordem de Execução
 
 ```
-TASK-01 ──► TASK-05 ──────────────────────────────────────────────────┐
-TASK-02 ──────────────────────────────────────────────────────────────┼──► TASK-06 ──► TASK-09 ──► (fim)
-TASK-03 ──────────────────────────────────────────────────────────────┤         │
-TASK-04 ──────────────────────────────────────────────────────────────┘         ├──► TASK-07 ──► TASK-09
-                                                                                 │         │
-             TASK-02 ──► TASK-11                                                 │         └──► TASK-12
-             TASK-03 ──┘                                                         │
-                                                                                 ├──► TASK-08 ──► TASK-12
-                                                                                 └──► TASK-10
+TASK-01 ──┐
+TASK-02 ──┤
+TASK-03 ──┼──► TASK-05 ──► TASK-08 ──► TASK-09 ──► TASK-10
+TASK-04 ──┘         │                       ▲
+                     │                       │
+           TASK-03 ──► TASK-06 ──────────────┤
+                                             │
+           TASK-03 ──► TASK-07 ─────────────┘
 ```
 
-**Visualização por fases (colunas = paralelo possível):**
-
-```
-Fase 1 (paralelo)     Fase 2          Fase 3 (paralelo)     Fase 4          Fase 5
-────────────────      ────────        ─────────────────      ────────        ────────
-TASK-01               TASK-05         TASK-06                TASK-09         TASK-12
-TASK-02                               TASK-07                TASK-10
-TASK-03                               TASK-08
-TASK-04                               TASK-11
-```
+> **Tasks paralelizáveis no início** (sem dependências entre si): TASK-01, TASK-02, TASK-03, TASK-04 — podem ser executadas simultaneamente por desenvolvedores diferentes.
+> TASK-06 depende apenas de TASK-03 e TASK-04, podendo iniciar em paralelo com TASK-05 após a conclusão dessas.
+> TASK-07 depende apenas de TASK-03, podendo iniciar em paralelo com TASK-05 e TASK-06.
+> TASK-08 aguarda TASK-05. TASK-09 aguarda TASK-05 e TASK-07. TASK-10 aguarda TASK-05, TASK-06 e TASK-07.
 
 ## Estimativa Total
-- Tasks P (< 2h): 5 tasks (TASK-02, TASK-03, TASK-04, TASK-05, TASK-09)
-- Tasks M (2–4h): 6 tasks (TASK-01, TASK-06, TASK-07, TASK-08, TASK-10, TASK-11)
-- Tasks G (4–8h): 1 task (TASK-12)
-- **Estimativa total**: 20–38 horas (execução sequencial) / **12–20 horas** (execução com paralelismo máximo entre Fase 1 e tarefas independentes)
+- Tasks P (< 2h): 6 tasks (TASK-02, TASK-03, TASK-04, TASK-07, TASK-08, TASK-09)
+- Tasks M (2–4h): 3 tasks (TASK-01, TASK-05, TASK-06)
+- Tasks G (4–8h): 1 task (TASK-10)
+- **Estimativa total**: 18–34 horas (execução sequencial) / **8–12 horas** (execução paralela com 2–3 desenvolvedores)
 
 ## Referências
 - PRD: SCRUM-14/PRD.md
