@@ -77,6 +77,20 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
+  // Extrai apenas o ID limpo — aceita "srv-xxx", URLs do dashboard ou caminhos com /deploys/...
+  // A Render API exige o prefixo "srv-"
+  const cleanId = (() => {
+    const withPrefix = serviceId.match(/srv-[a-z0-9]+/i);
+    if (withPrefix) return withPrefix[0];
+    const bare = serviceId.match(/([a-z0-9]{16,})/i);
+    const id = bare ? bare[0] : serviceId.split('/')[0];
+    return id.startsWith('srv-') ? id : `srv-${id}`;
+  })();
+
+  if (cleanId !== serviceId) {
+    console.log(`ℹ️  Service ID normalizado: "${serviceId}" → "${cleanId}"`);
+  }
+
   const envPath = resolve(process.cwd(), '.env');
   const envVars = parseEnvFile(envPath);
 
@@ -90,8 +104,8 @@ async function main(): Promise<void> {
     console.log(`   • ${key}`);
   }
 
-  console.log(`\n🚀 Enviando para serviço ${serviceId}...`);
-  await setRenderEnvVars(apiKey, serviceId, payload);
+  console.log(`\n🚀 Enviando para serviço ${cleanId}...`);
+  await setRenderEnvVars(apiKey, cleanId, payload);
 
   console.log('✅ Variáveis de ambiente configuradas com sucesso no Render!');
   console.log('   O serviço será redeploy automaticamente.\n');
