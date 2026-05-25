@@ -16,7 +16,7 @@ export type PoAgentJobData = {
 
 // ─── Fila do agente PO ────────────────────────────────────────────────────────
 
-export const poAgentQueue = new Queue<PoAgentJobData>('agent:po', {
+export const poAgentQueue = new Queue<PoAgentJobData>('agent-po', {
   connection: redisConnection,
   defaultJobOptions: {
     attempts: 3,
@@ -69,7 +69,7 @@ async function processPoJob(job: Job<PoAgentJobData>): Promise<unknown> {
   const { storyId, jiraKey, agentRunId, summary } = job.data;
   const startedAt = new Date();
 
-  console.log(`[agent:po] iniciando para ${jiraKey} (run: ${agentRunId})`);
+  console.log(`[agent-po] iniciando para ${jiraKey} (run: ${agentRunId})`);
 
   // 1. Marca run como 'running'
   await db
@@ -79,7 +79,7 @@ async function processPoJob(job: Job<PoAgentJobData>): Promise<unknown> {
 
   // 2. Gera PRD.md (stub)
   const prdContent = buildPrdContent(jiraKey, summary);
-  console.log(`[agent:po] PRD.md gerado (${prdContent.length} chars)`);
+  console.log(`[agent-po] PRD.md gerado (${prdContent.length} chars)`);
 
   // 3. Salva artifact no banco
   const [artifact] = await db
@@ -93,14 +93,14 @@ async function processPoJob(job: Job<PoAgentJobData>): Promise<unknown> {
     })
     .returning({ id: schema.artifacts.id });
 
-  console.log(`[agent:po] artifact salvo — id: ${artifact!.id}`);
+  console.log(`[agent-po] artifact salvo — id: ${artifact!.id}`);
 
   // 4. Move card Jira para "Aguardando Aceite PRD"
   try {
     await moveCardTo(jiraKey, 'Aguardando Aceite PRD');
-    console.log(`[agent:po] ${jiraKey} movido para "Aguardando Aceite PRD"`);
+    console.log(`[agent-po] ${jiraKey} movido para "Aguardando Aceite PRD"`);
   } catch (err) {
-    console.error(`[agent:po] falha ao mover ${jiraKey}:`, (err as Error).message);
+    console.error(`[agent-po] falha ao mover ${jiraKey}:`, (err as Error).message);
     throw err;
   }
 
@@ -112,10 +112,10 @@ async function processPoJob(job: Job<PoAgentJobData>): Promise<unknown> {
 
   try {
     await addComment(jiraKey, comment);
-    console.log(`[agent:po] comentário adicionado em ${jiraKey}`);
+    console.log(`[agent-po] comentário adicionado em ${jiraKey}`);
   } catch (err) {
     // Comentário falhou — não bloqueia o fluxo
-    console.warn(`[agent:po] falha ao comentar em ${jiraKey}:`, (err as Error).message);
+    console.warn(`[agent-po] falha ao comentar em ${jiraKey}:`, (err as Error).message);
   }
 
   // 6. Marca run como 'completed'
@@ -132,7 +132,7 @@ async function processPoJob(job: Job<PoAgentJobData>): Promise<unknown> {
     })
     .where(eq(schema.agentRuns.id, agentRunId));
 
-  console.log(`[agent:po] run ${agentRunId} concluído em ${completedAt.getTime() - startedAt.getTime()}ms`);
+  console.log(`[agent-po] run ${agentRunId} concluído em ${completedAt.getTime() - startedAt.getTime()}ms`);
 
   return output;
 }
@@ -140,27 +140,27 @@ async function processPoJob(job: Job<PoAgentJobData>): Promise<unknown> {
 // ─── Criação do Worker ────────────────────────────────────────────────────────
 
 export function createPoAgentWorker() {
-  const worker = new Worker<PoAgentJobData>('agent:po', processPoJob, {
+  const worker = new Worker<PoAgentJobData>('agent-po', processPoJob, {
     connection: redisConnection,
     concurrency: 3,
   });
 
   worker.on('completed', (job, result) => {
-    console.log(`[agent:po] job ${job.id} concluído:`, JSON.stringify(result));
+    console.log(`[agent-po] job ${job.id} concluído:`, JSON.stringify(result));
   });
 
   worker.on('failed', (job, err) => {
     console.error(
-      `[agent:po] job ${job?.id} falhou (tentativa ${job?.attemptsMade}/${job?.opts.attempts}):`,
+      `[agent-po] job ${job?.id} falhou (tentativa ${job?.attemptsMade}/${job?.opts.attempts}):`,
       err.message,
     );
   });
 
   worker.on('error', (err) => {
-    console.error('[agent:po] erro no worker:', err.message);
+    console.error('[agent-po] erro no worker:', err.message);
   });
 
-  console.log('[agent:po] worker iniciado — aguardando jobs');
+  console.log('[agent-po] worker iniciado — aguardando jobs');
 
   return worker;
 }
