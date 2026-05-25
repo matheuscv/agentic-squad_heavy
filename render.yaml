@@ -1,0 +1,74 @@
+services:
+  - type: web
+    name: agentic-squad-heavy
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    branch: master
+    region: oregon
+    plan: starter
+
+    healthCheckPath: /health
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "3000"
+
+      # Modelos por agente
+      - key: MODEL_ORCHESTRATOR
+        sync: false
+      - key: MODEL_PO
+        sync: false
+      - key: MODEL_LT
+        sync: false
+      - key: MODEL_QA
+        sync: false
+      - key: MODEL_DEV
+        sync: false
+
+      # Anthropic
+      - key: ANTHROPIC_API_KEY
+        sync: false
+
+      # Jira
+      - key: JIRA_BASE_URL
+        sync: false
+      - key: JIRA_EMAIL
+        sync: false
+      - key: JIRA_API_TOKEN
+        sync: false
+      - key: JIRA_PROJECT_KEY
+        sync: false
+      - key: JIRA_WEBHOOK_SECRET
+        sync: false
+
+      # GitHub App
+      - key: GITHUB_APP_ID
+        sync: false
+      - key: GITHUB_APP_PRIVATE_KEY
+        sync: false
+      - key: GITHUB_APP_INSTALLATION_ID
+        sync: false
+      - key: GITHUB_OWNER
+        sync: false
+      - key: GITHUB_REPO
+        sync: false
+
+      # Supabase / Banco
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+
+      # Redis (Upstash)
+      - key: REDIS_URL
+        sync: false
+
+      # Observabilidade
+      - key: BETTERSTACK_SOURCE_TOKEN
+        sync: false

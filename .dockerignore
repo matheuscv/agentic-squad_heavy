@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+*.log
+.git/
+.gitignore
+README.md
+docs/
+src/**/*.test.ts
+src/**/*.spec.ts
