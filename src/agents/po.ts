@@ -1,8 +1,9 @@
 import { Queue, Worker, type Job } from 'bullmq';
 import { eq } from 'drizzle-orm';
 import { db, schema } from '../db/index';
+import { updateStoryStatus, updateStoryDescription } from '../db/stories';
 import { redisConnection } from '../queue/index';
-import { moveCardTo, addComment } from '../jira/client';
+import { getIssue, moveCardTo, addComment } from '../jira/client';
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -26,10 +27,28 @@ export const poAgentQueue = new Queue<PoAgentJobData>('agent-po', {
   },
 });
 
+// ─── Helpers de conteúdo ─────────────────────────────────────────────────────
+
+/** Extrai texto plano do Atlassian Document Format (ADF). */
+function extractTextFromAdf(adf: unknown): string {
+  if (!adf || typeof adf !== 'object') return '';
+  const node = adf as Record<string, unknown>;
+
+  if (node['type'] === 'text' && typeof node['text'] === 'string') {
+    return node['text'];
+  }
+
+  const children = (node['content'] as unknown[]) ?? [];
+  return children.map(extractTextFromAdf).join('');
+}
+
 // ─── Geração do PRD (stub) ────────────────────────────────────────────────────
 
-function buildPrdContent(jiraKey: string, summary: string): string {
+function buildPrdContent(jiraKey: string, summary: string, description = ''): string {
   const now = new Date().toISOString();
+  const descSection = description.trim()
+    ? description.trim()
+    : '[A ser preenchido pelo Agente PO com IA]';
 
   return `# PRD — ${summary}
 
@@ -41,6 +60,9 @@ function buildPrdContent(jiraKey: string, summary: string): string {
 ## Contexto
 > ⚠️ Este é um PRD gerado pelo Agente PO (versão stub — Fase 1).
 > O conteúdo completo com análise de requisitos via IA será produzido na Fase 2.
+
+## Descrição da História (Jira)
+${descSection}
 
 ## Problema
 [A ser preenchido pelo Agente PO com IA]
@@ -77,8 +99,23 @@ async function processPoJob(job: Job<PoAgentJobData>): Promise<unknown> {
     .set({ status: 'running', startedAt })
     .where(eq(schema.agentRuns.id, agentRunId));
 
-  // 2. Gera PRD.md (stub)
-  const prdContent = buildPrdContent(jiraKey, summary);
+  // 2. Enriquece a história com a descrição real do Jira
+  let fullDescription = '';
+  try {
+    const issue = await getIssue(jiraKey);
+    const descBlock = issue.fields.description;
+    // Extrai texto simples do ADF (Atlassian Document Format)
+    fullDescription = extractTextFromAdf(descBlock) ?? '';
+    if (fullDescription) {
+      await updateStoryDescription(jiraKey, fullDescription);
+      console.log(`[agent:po] descrição persistida para ${jiraKey} (${fullDescription.length} chars)`);
+    }
+  } catch (err) {
+    console.warn(`[agent:po] falha ao buscar descrição de ${jiraKey}:`, (err as Error).message);
+  }
+
+  // 3. Gera PRD.md (stub)
+  const prdContent = buildPrdContent(jiraKey, summary, fullDescription);
   console.log(`[agent-po] PRD.md gerado (${prdContent.length} chars)`);
 
   // 3. Salva artifact no banco
@@ -103,6 +140,13 @@ async function processPoJob(job: Job<PoAgentJobData>): Promise<unknown> {
     console.error(`[agent-po] falha ao mover ${jiraKey}:`, (err as Error).message);
     throw err;
   }
+
+  // 4a. Atualiza status no banco imediatamente — não espera o próximo webhook
+  await updateStoryStatus(jiraKey, 'Aguardando Aceite PRD', {
+    lastAgentType: 'po',
+    lastAgentRunId: agentRunId,
+  });
+  console.log(`[agent-po] status do banco atualizado → "Aguardando Aceite PRD"`);
 
   // 5. Adiciona comentário no Jira
   const comment =

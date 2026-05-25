@@ -1,50 +1,14 @@
 import { Worker, type Job } from 'bullmq';
-import { sql } from 'drizzle-orm';
 import { db, schema } from '../db/index';
+import { upsertStory } from '../db/stories';
 import { redisConnection, type OrchestratorJobData } from '../queue/index';
 import { moveCardTo } from '../jira/client';
 import { poAgentQueue } from '../agents/po';
 import {
   handleTransition,
   getStateOrder,
-  isKnownStatus,
-  JIRA_TO_DB_STATUS,
   type JiraStatus,
 } from './state-machine';
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-async function upsertStory(data: OrchestratorJobData) {
-  const { jiraKey, summary, toStatus, currentStatus } = data;
-
-  const dbStatus =
-    toStatus && isKnownStatus(toStatus)
-      ? JIRA_TO_DB_STATUS[toStatus]
-      : isKnownStatus(currentStatus)
-        ? JIRA_TO_DB_STATUS[currentStatus]
-        : 'backlog';
-
-  const [story] = await db
-    .insert(schema.stories)
-    .values({
-      jiraKey,
-      jiraSummary: summary,
-      status: dbStatus,
-      jiraStatus: toStatus ?? currentStatus,
-    })
-    .onConflictDoUpdate({
-      target: schema.stories.jiraKey,
-      set: {
-        jiraSummary: summary,
-        status: dbStatus,
-        jiraStatus: toStatus ?? currentStatus,
-        updatedAt: sql`now()`,
-      },
-    })
-    .returning();
-
-  return story!;
-}
 
 // ─── Processador do job ───────────────────────────────────────────────────────
 
