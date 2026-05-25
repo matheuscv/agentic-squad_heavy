@@ -42,11 +42,13 @@ app.get('/health', async (_req: Request, res: Response) => {
   const checks: Record<string, 'ok' | 'error'> = {};
 
   // Verifica banco
+  let dbError: string | undefined;
   try {
     await dbPool.query('SELECT 1');
     checks.database = 'ok';
   } catch (err) {
-    console.error('[health] db error:', (err as Error).message);
+    dbError = (err as Error).message;
+    console.error('[health] db error:', dbError);
     checks.database = 'error';
   }
 
@@ -64,6 +66,7 @@ app.get('/health', async (_req: Request, res: Response) => {
     status: healthy ? 'ok' : 'degraded',
     timestamp: new Date().toISOString(),
     checks,
+    ...(dbError && { dbError }),
   });
 });
 
