@@ -11,6 +11,7 @@ import IORedis from 'ioredis';
 import jiraWebhookRouter from './webhooks/jira';
 import { createOrchestratorWorker, createReconciler } from './orchestrator';
 import { createPoAgentWorker } from './agents/po';
+import { createLtAgentWorker } from './agents/lt';
 import { logger } from './lib/logger';
 
 const app = express();
@@ -80,6 +81,7 @@ app.get('/health', async (_req: Request, res: Response) => {
 
 const orchestratorWorker = createOrchestratorWorker();
 const poAgentWorker = createPoAgentWorker();
+const ltAgentWorker = createLtAgentWorker();
 const reconcilerInterval = createReconciler();
 
 const server = app.listen(port, () => {
@@ -97,6 +99,7 @@ const shutdown = async (signal: string) => {
       redis.quit(),
       orchestratorWorker.close(),
       poAgentWorker.close(),
+      ltAgentWorker.close(),
     ]);
     logger.info('servidor encerrado com sucesso');
     process.exit(0);
