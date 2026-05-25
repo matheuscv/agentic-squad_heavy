@@ -18,7 +18,8 @@
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
     "typecheck": "tsc --noEmit",
-    "render:setup-env": "tsx --env-file=.env scripts/setup-render-env.ts"
+    "render:setup-env": "tsx --env-file=.env scripts/setup-render-env.ts",
+    "render:deploy": "tsx --env-file=.env scripts/deploy-render.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.55.0",

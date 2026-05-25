@@ -12,16 +12,23 @@ app.use(express.json());
 
 // ─── Conexões ─────────────────────────────────────────────────────────────────
 
+// Supabase exige SSL em produção — rejectUnauthorized:false aceita o certificado deles
 const dbPool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  ssl: { rejectUnauthorized: false },
   max: 2,
-  connectionTimeoutMillis: 3_000,
+  connectionTimeoutMillis: 8_000,
 });
 
-const redis = new IORedis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
+// Upstash exige TLS — garante rediss:// independente do que estiver no .env
+const rawRedisUrl = process.env.REDIS_URL ?? 'redis://localhost:6379';
+const redisUrl = rawRedisUrl.includes('upstash.io') && rawRedisUrl.startsWith('redis://')
+  ? rawRedisUrl.replace('redis://', 'rediss://')
+  : rawRedisUrl;
+
+const redis = new IORedis(redisUrl, {
   maxRetriesPerRequest: 1,
-  connectTimeout: 3_000,
+  connectTimeout: 8_000,
   lazyConnect: true,
 });
 
