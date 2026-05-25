@@ -42,22 +42,48 @@ async function renderRequest<T>(
     body: body ? JSON.stringify(body) : undefined,
   });
 
+  const text = await res.text();
+
   if (!res.ok) {
-    const text = await res.text();
     throw new Error(`Render API ${method} ${path} → ${res.status}: ${text}`);
   }
 
-  return res.json() as Promise<T>;
+  return (text ? JSON.parse(text) : {}) as T;
+}
+
+// Render API retorna array de { deploy: {...}, service: {...} }
+type DeployItem = { deploy: { id: string; status: string; finishedAt: string | null } };
+
+async function getLatestDeploy(apiKey: string, serviceId: string): Promise<DeployItem['deploy']> {
+  const items = await renderRequest<DeployItem[]>(
+    'GET',
+    `/services/${serviceId}/deploys?limit=1`,
+    apiKey,
+  );
+  if (!items.length) throw new Error('Nenhum deploy encontrado para este serviço.');
+  return items[0].deploy;
 }
 
 async function triggerDeploy(apiKey: string, serviceId: string): Promise<string> {
-  const deploy = await renderRequest<{ id: string }>(
-    'POST',
-    `/services/${serviceId}/deploys`,
-    apiKey,
-    { clearCache: 'do_not_clear' },
-  );
-  return deploy.id;
+  // Tenta criar um novo deploy; se já houver um em progresso, usa o mais recente
+  try {
+    const raw = await renderRequest<Record<string, unknown>>(
+      'POST',
+      `/services/${serviceId}/deploys`,
+      apiKey,
+      { clearCache: 'do_not_clear' },
+    );
+    const id =
+      (raw['id'] as string | undefined) ??
+      ((raw['deploy'] as Record<string, unknown> | undefined)?.['id'] as string | undefined);
+    if (id) return id;
+  } catch {
+    // ignora — provavelmente já há deploy em progresso
+  }
+
+  console.log('   ℹ️  Deploy em progresso detectado — monitorando o mais recente...');
+  const latest = await getLatestDeploy(apiKey, serviceId);
+  return latest.id;
 }
 
 async function getDeployStatus(
@@ -65,12 +91,14 @@ async function getDeployStatus(
   serviceId: string,
   deployId: string,
 ): Promise<{ status: string; finishedAt: string | null }> {
-  const deploy = await renderRequest<{ status: string; finishedAt: string | null }>(
+  // Render retorna { deploy: {...}, service: {...} } ou { status, finishedAt } diretamente
+  const raw = await renderRequest<Record<string, unknown>>(
     'GET',
     `/services/${serviceId}/deploys/${deployId}`,
     apiKey,
   );
-  return deploy;
+  const d = (raw['deploy'] as Record<string, unknown> | undefined) ?? raw;
+  return { status: d['status'] as string, finishedAt: (d['finishedAt'] as string) ?? null };
 }
 
 async function getServiceUrl(apiKey: string, serviceId: string): Promise<string> {

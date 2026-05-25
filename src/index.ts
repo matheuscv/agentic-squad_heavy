@@ -45,7 +45,8 @@ app.get('/health', async (_req: Request, res: Response) => {
   try {
     await dbPool.query('SELECT 1');
     checks.database = 'ok';
-  } catch {
+  } catch (err) {
+    console.error('[health] db error:', (err as Error).message);
     checks.database = 'error';
   }
 
