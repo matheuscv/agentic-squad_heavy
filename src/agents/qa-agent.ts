@@ -20,6 +20,24 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// Substitui o conteúdo de tool_results antigos por placeholder para evitar explosão de contexto.
+// Mantém intactos os últimos keepLastTurns turnos (cada turno = 1 assistant + 1 user).
+function pruneOldToolResults(messages: Anthropic.MessageParam[], keepLastTurns: number = 5): void {
+  const keepCount = keepLastTurns * 2 + 1; // +1 para a mensagem inicial do usuário
+  if (messages.length <= keepCount) return;
+  const pruneUntil = messages.length - keepCount;
+  for (let i = 1; i < pruneUntil; i++) {
+    const msg = messages[i];
+    if (msg.role === 'user' && Array.isArray(msg.content)) {
+      msg.content = (msg.content as Anthropic.ToolResultBlockParam[]).map((block) =>
+        block.type === 'tool_result'
+          ? { ...block, content: '[omitido — conteúdo removido para controle de contexto]' }
+          : block,
+      );
+    }
+  }
+}
+
 const log = childLogger({ module: 'agent.qa' });
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -289,8 +307,8 @@ async function runQaAgent(
 
   jobLog.info({ model }, 'iniciando loop de tool-use QA com Claude');
 
-  // QA pode ter ciclos de espera de 10 min cada → até 60 turnos
-  for (let turn = 0; turn < 60; turn++) {
+  // QA pode ter ciclos de espera de 10 min cada → até 25 turnos
+  for (let turn = 0; turn < 25; turn++) {
     const response = await anthropic.messages.create({
       model,
       max_tokens: 8192,
@@ -530,13 +548,14 @@ async function runQaAgent(
       }
 
       messages.push({ role: 'user', content: toolResults });
+      pruneOldToolResults(messages);
       continue;
     }
 
     throw new Error(`stop_reason inesperado: ${response.stop_reason}`);
   }
 
-  throw new Error('Agente QA excedeu o limite de 60 turnos sem concluir a revisão');
+  throw new Error('Agente QA excedeu o limite de 25 turnos sem concluir a revisão');
 }
 
 // ─── Processador do job QA ────────────────────────────────────────────────────
