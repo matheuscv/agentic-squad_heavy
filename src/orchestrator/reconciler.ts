@@ -40,15 +40,21 @@ async function reconcile(): Promise<void> {
   log.debug('iniciando ciclo de reconciliação');
 
   // 1. Busca issues em andamento no banco
-  const dbStories = await db
-    .select({
-      id: schema.stories.id,
-      jiraKey: schema.stories.jiraKey,
-      jiraStatus: schema.stories.jiraStatus,
-      status: schema.stories.status,
-    })
-    .from(schema.stories)
-    .where(inArray(schema.stories.status, IN_FLIGHT_DB_STATUSES));
+  let dbStories: { id: string; jiraKey: string; jiraStatus: string | null; status: string }[];
+  try {
+    dbStories = await db
+      .select({
+        id: schema.stories.id,
+        jiraKey: schema.stories.jiraKey,
+        jiraStatus: schema.stories.jiraStatus,
+        status: schema.stories.status,
+      })
+      .from(schema.stories)
+      .where(inArray(schema.stories.status, IN_FLIGHT_DB_STATUSES));
+  } catch (err) {
+    log.error({ err: (err as Error).message }, 'falha ao buscar stories no banco');
+    return;
+  }
 
   if (dbStories.length === 0) {
     log.debug('nenhuma story em andamento — ciclo encerrado');

@@ -1,7 +1,7 @@
 /**
  * Testes adicionais de cobertura de branches para src/orchestrator/state-machine.ts
  * Foca nos caminhos não cobertos:
- * - handleTransition com todas as combinações de fromStatus/toStatus
+ * - handleTransition com todas as combinações de toStatus
  * - getStateOrder com todos os estados e estados desconhecidos
  * - isKnownStatus para todos os estados suportados e desconhecidos
  * - Transições de estados não mapeados (unknown)
@@ -14,7 +14,6 @@ import {
 } from './state-machine';
 
 // Tentamos importar isKnownStatus — pode ou não existir no export
-// Se não existir, os testes de handleTransition cobrem o branch
 let isKnownStatus: ((s: string) => boolean) | undefined;
 try {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -39,18 +38,15 @@ describe('state-machine — getStateOrder', () => {
     ['Done', 8],
   ] as const;
 
-  knownStatuses.forEach(([status, expected]) => {
-    it(`getStateOrder("${status}") retorna ${expected}`, () => {
+  knownStatuses.forEach(([status]) => {
+    it(`getStateOrder("${status}") retorna número`, () => {
       const order = getStateOrder(status);
-      // Alguns statuses podem ter aliases ou ordens ligeiramente diferentes
-      // O importante é que não retorne -1 (desconhecido)
       expect(typeof order).toBe('number');
     });
   });
 
   it('retorna -1 para status desconhecido', () => {
-    const order = getStateOrder('StatusMisterioso');
-    expect(order).toBe(-1);
+    expect(getStateOrder('StatusMisterioso')).toBe(-1);
   });
 
   it('retorna -1 para string vazia', () => {
@@ -93,14 +89,14 @@ describe('state-machine — isKnownStatus', () => {
 
 describe('state-machine — handleTransition', () => {
   describe('transições que invocam agente po (PO)', () => {
-    it('fromStatus=A Refinar → toStatus=A Refinar (mesma fase) retorna tipo conhecido', () => {
-      const result = handleTransition('A Refinar', 'A Refinar');
+    it('A Refinar retorna tipo conhecido', () => {
+      const result = handleTransition('A Refinar');
       expect(result).toBeDefined();
       expect(result.type).toBeDefined();
     });
 
-    it('null → A Refinar invoca agente po', () => {
-      const result = handleTransition(null, 'A Refinar');
+    it('A Refinar invoca agente po', () => {
+      const result = handleTransition('A Refinar');
       expect(result.type).toBe('invoke_agent');
       if (result.type === 'invoke_agent') {
         expect(result.agent).toBe('po');
@@ -109,23 +105,18 @@ describe('state-machine — handleTransition', () => {
   });
 
   describe('transições que invocam agente lt (Tech Lead)', () => {
-    it('null → Em Refinamento invoca agente lt', () => {
-      const result = handleTransition(null, 'Em Refinamento');
+    it('PRD Aceito invoca agente lt', () => {
+      const result = handleTransition('PRD Aceito');
       expect(result.type).toBe('invoke_agent');
       if (result.type === 'invoke_agent') {
         expect(result.agent).toBe('lt');
       }
     });
-
-    it('A Refinar → Em Refinamento invoca agente lt', () => {
-      const result = handleTransition('A Refinar', 'Em Refinamento');
-      expect(result.type).toBe('invoke_agent');
-    });
   });
 
   describe('transições que invocam agente dev', () => {
-    it('null → Em Desenvolvimento invoca agente dev', () => {
-      const result = handleTransition(null, 'Em Desenvolvimento');
+    it('Plano Validado invoca agente dev', () => {
+      const result = handleTransition('Plano Validado');
       expect(result.type).toBe('invoke_agent');
       if (result.type === 'invoke_agent') {
         expect(result.agent).toBe('dev');
@@ -134,8 +125,8 @@ describe('state-machine — handleTransition', () => {
   });
 
   describe('transições que invocam agente qa', () => {
-    it('null → Em QA invoca agente qa', () => {
-      const result = handleTransition(null, 'Em QA');
+    it('Em QA invoca agente qa', () => {
+      const result = handleTransition('Em QA');
       expect(result.type).toBe('invoke_agent');
       if (result.type === 'invoke_agent') {
         expect(result.agent).toBe('qa');
@@ -144,21 +135,15 @@ describe('state-machine — handleTransition', () => {
   });
 
   describe('transições terminais (Concluído)', () => {
-    it('null → Concluído retorna terminal', () => {
-      const result = handleTransition(null, 'Concluído');
-      expect(result.type).toBe('terminal');
-    });
-
-    it('Em QA → Concluído retorna terminal', () => {
-      const result = handleTransition('Em QA', 'Concluído');
+    it('Concluído retorna terminal', () => {
+      const result = handleTransition('Concluído');
       expect(result.type).toBe('terminal');
     });
   });
 
   describe('human_gate — Aguardando Aceite PRD', () => {
     it('retorna human_gate para Aguardando Aceite PRD', () => {
-      const result = handleTransition('Em Refinamento', 'Aguardando Aceite PRD');
-      // Pode ser human_gate ou invoke_agent dependendo da máquina de estado
+      const result = handleTransition('Aguardando Aceite PRD');
       expect(result.type).toBeDefined();
       expect(['human_gate', 'invoke_agent', 'in_progress', 'terminal', 'unknown']).toContain(result.type);
     });
@@ -166,35 +151,37 @@ describe('state-machine — handleTransition', () => {
 
   describe('toStatus desconhecido', () => {
     it('retorna unknown para status de destino não mapeado', () => {
-      const result = handleTransition('Em Desenvolvimento', 'StatusMisterioso');
-      expect(result.type).toBe('unknown');
-    });
-
-    it('retorna unknown quando fromStatus e toStatus são ambos desconhecidos', () => {
-      const result = handleTransition('StatusA', 'StatusB');
+      const result = handleTransition('StatusMisterioso');
       expect(result.type).toBe('unknown');
     });
 
     it('retorna unknown quando toStatus é string vazia', () => {
-      const result = handleTransition(null, '');
+      const result = handleTransition('');
       expect(result.type).toBe('unknown');
     });
   });
 
-  describe('fromStatus: undefined e null', () => {
-    it('aceita null como fromStatus sem lançar', () => {
-      expect(() => handleTransition(null, 'Concluído')).not.toThrow();
+  describe('in_progress — transições intermediárias', () => {
+    it('Em Refinamento retorna in_progress', () => {
+      const result = handleTransition('Em Refinamento');
+      expect(result.type).toBe('in_progress');
     });
 
-    it('aceita undefined como fromStatus sem lançar', () => {
-      expect(() => handleTransition(undefined as unknown as null, 'Em QA')).not.toThrow();
+    it('Em Desenvolvimento retorna in_progress', () => {
+      const result = handleTransition('Em Desenvolvimento');
+      expect(result.type).toBe('in_progress');
     });
   });
 
-  describe('in_progress — transições intermediárias', () => {
-    it('Em Desenvolvimento → Em Desenvolvimento retorna in_progress ou terminal', () => {
-      const result = handleTransition('Em Desenvolvimento', 'Em Desenvolvimento');
-      expect(['in_progress', 'invoke_agent', 'unknown']).toContain(result.type);
+  describe('fromStatus: null/undefined não lança erro', () => {
+    it('aceita apenas toStatus sem lançar', () => {
+      expect(() => handleTransition('Concluído')).not.toThrow();
+    });
+
+    it('retorna resultado válido para qualquer toStatus conhecido', () => {
+      const result = handleTransition('Em QA');
+      expect(result).toBeDefined();
+      expect(result.type).toBeDefined();
     });
   });
 });

@@ -89,9 +89,7 @@ describe('moveCardTo', () => {
     mockFetch.mockResolvedValueOnce(makeOkResponse(transitions));
 
     const { moveCardTo } = await importClient();
-    await expect(moveCardTo('SCRUM-16', 'Concluído')).rejects.toThrow(
-      expect.stringMatching(/Concluído/),
-    );
+    await expect(moveCardTo('SCRUM-16', 'Concluído')).rejects.toThrow(/indispon/);
   });
 
   it('lança erro quando API retorna não-ok ao buscar transições', async () => {
@@ -139,8 +137,9 @@ describe('fetchActiveIssues', () => {
 
     expect(result).toEqual(jiraResponse.issues);
     expect(mockFetch).toHaveBeenCalledOnce();
-    const [url] = mockFetch.mock.calls[0];
-    expect(url).toContain('SCRUM');
+    const [, opts] = mockFetch.mock.calls[0];
+    const body = JSON.parse(opts.body as string);
+    expect(body.jql).toContain('SCRUM');
   });
 
   it('retorna array vazio quando não há issues', async () => {
@@ -159,14 +158,15 @@ describe('fetchActiveIssues', () => {
     await expect(fetchActiveIssues('SCRUM')).rejects.toThrow('500');
   });
 
-  it('constrói URL JQL corretamente com o projectKey', async () => {
+  it('constrói JQL corretamente com o projectKey', async () => {
     mockFetch.mockResolvedValueOnce(makeOkResponse({ issues: [], total: 0, maxResults: 50, startAt: 0 }));
 
     const { fetchActiveIssues } = await importClient();
     await fetchActiveIssues('MYPROJECT');
 
-    const [url] = mockFetch.mock.calls[0];
-    expect(url).toContain('MYPROJECT');
+    const [, opts] = mockFetch.mock.calls[0];
+    const body = JSON.parse(opts.body as string);
+    expect(body.jql).toContain('MYPROJECT');
   });
 });
 

@@ -108,9 +108,15 @@ router.post('/jira', async (req: Request, res: Response) => {
     receivedAt: new Date().toISOString(),
   };
 
-  const job = await orchestratorQueue.add('jira:transition', jobData, {
-    jobId: `${issue.key}-${Date.now()}`,
-  });
+  let job;
+  try {
+    job = await orchestratorQueue.add('jira:transition', jobData, {
+      jobId: `${issue.key}-${Date.now()}`,
+    });
+  } catch (err) {
+    log.error({ err: (err as Error).message, jiraKey: issue.key }, 'falha ao enfileirar job');
+    return res.status(500).json({ error: 'queue_error' });
+  }
 
   log.info({ jiraKey: issue.key, jobId: job.id, from: fromStatus, to: toStatus }, 'job enfileirado');
 

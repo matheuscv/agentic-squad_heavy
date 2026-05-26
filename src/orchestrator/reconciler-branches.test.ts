@@ -87,7 +87,7 @@ vi.mock('./state-machine', () => ({
 
 // ─── Helper ───────────────────────────────────────────────────────────────────
 
-async function runReconcilerCycle(advanceMs = 91_000): Promise<void> {
+async function runReconcilerCycle(advanceMs = 35_000): Promise<void> {
   const { createReconciler } = await import('./reconciler');
   const timer = createReconciler();
   await vi.advanceTimersByTimeAsync(advanceMs);
@@ -143,10 +143,10 @@ describe('reconciler — branches adicionais', () => {
         { key: 'SCRUM-1', fields: { status: { name: 'Em Desenvolvimento' }, summary: 'test' } },
       ]);
 
-      // jiraOrder (3) > dbOrder (1)
+      // dbOrder (1) < jiraOrder (3) → divergência
       mockGetStateOrder
-        .mockReturnValueOnce(3)   // Jira: Em Desenvolvimento
-        .mockReturnValueOnce(1);  // DB: Backlog
+        .mockReturnValueOnce(1)   // DB: story.jiraStatus ('Backlog')
+        .mockReturnValueOnce(3);  // Jira: jiraCurrentStatus ('Em Desenvolvimento')
 
       await runReconcilerCycle();
 
@@ -213,20 +213,22 @@ describe('reconciler — branches adicionais', () => {
         { id: 'uuid-1', jiraKey: 'SCRUM-1', jiraStatus: 'Backlog', status: 'backlog' },
         { id: 'uuid-2', jiraKey: 'SCRUM-2', jiraStatus: 'Em Desenvolvimento', status: 'em_desenvolvimento' },
       ]);
-      mockFetchActiveIssues.mockResolvedValueOnce([
-        { key: 'SCRUM-1', fields: { status: { name: 'Em Desenvolvimento' }, summary: 'story 1' } },
-        { key: 'SCRUM-2', fields: { status: { name: 'Em Desenvolvimento' }, summary: 'story 2' } },
-      ]);
+      // Configura fetch para o ciclo de 30s e retorna [] para ciclos adicionais
+      mockFetchActiveIssues
+        .mockResolvedValueOnce([
+          { key: 'SCRUM-1', fields: { status: { name: 'Em Desenvolvimento' }, summary: 'story 1' } },
+          { key: 'SCRUM-2', fields: { status: { name: 'Em Desenvolvimento' }, summary: 'story 2' } },
+        ])
+        .mockResolvedValue([]);
 
-      // SCRUM-1: jiraOrder=3 > dbOrder=1 → divergente
-      // SCRUM-2: mesma ordem → sincronizado
+      // SCRUM-1: dbOrder=1 < jiraOrder=3 → divergente
+      // SCRUM-2: jiraStatus === story.jiraStatus → skipped (getStateOrder não é chamado)
       mockGetStateOrder
-        .mockReturnValueOnce(3)  // SCRUM-1 jira
-        .mockReturnValueOnce(1)  // SCRUM-1 db
-        .mockReturnValueOnce(3)  // SCRUM-2 jira
-        .mockReturnValueOnce(3); // SCRUM-2 db
+        .mockReturnValueOnce(1)  // SCRUM-1 db (story.jiraStatus = 'Backlog')
+        .mockReturnValueOnce(3)  // SCRUM-1 jira (jiraCurrentStatus = 'Em Desenvolvimento')
+        .mockReturnValue(3);     // fallback para ciclos adicionais
 
-      await runReconcilerCycle();
+      await runReconcilerCycle(95_000);
 
       expect(mockOrchestratorQueue.add).toHaveBeenCalledTimes(1);
       expect(mockOrchestratorQueue.add).toHaveBeenCalledWith(

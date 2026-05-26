@@ -149,7 +149,8 @@ function makeJob(data: Record<string, unknown>) {
 }
 
 async function getProcessor() {
-  await import('./worker');
+  const { createOrchestratorWorker } = await import('./worker');
+  createOrchestratorWorker();
   return mockWorkerProcessor.fn!;
 }
 
