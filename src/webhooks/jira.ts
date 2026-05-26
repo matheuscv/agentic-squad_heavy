@@ -10,13 +10,18 @@ const router = Router();
 
 // ─── Schema de validação do payload Jira ─────────────────────────────────────
 
+const safeOptionalString = z.preprocess(
+  (val) => (typeof val === 'function' ? undefined : val),
+  z.string().nullable().optional(),
+);
+
 const changelogItemSchema = z.object({
   field: z.string(),
   fieldtype: z.string().optional(),
-  from: z.string().nullable().optional(),
-  fromString: z.string().nullable().optional(),
-  to: z.string().nullable().optional(),
-  toString: z.string().nullable().optional(),
+  from: safeOptionalString,
+  fromString: safeOptionalString,
+  to: safeOptionalString,
+  toString: safeOptionalString,
 });
 
 const jiraWebhookSchema = z.object({
@@ -85,7 +90,10 @@ router.post('/jira', async (req: Request, res: Response) => {
   }
 
   const fromStatus = statusChange.fromString ?? null;
-  const toStatus = statusChange.toString ?? null;
+  // 'toString' colide com Object.prototype.toString — verificar own property
+  const toStatus = Object.hasOwn(statusChange, 'toString')
+    ? (statusChange.toString ?? null)
+    : null;
 
   log.info({ jiraKey: issue.key, from: fromStatus, to: toStatus }, 'transição recebida');
 

@@ -58,6 +58,7 @@ vi.mock('../../db/index', () => ({
   db: {
     update: vi.fn(() => ({ set: vi.fn(() => ({ where: mocks.dbUpdateWhere })) })),
     insert: vi.fn(() => ({ values: vi.fn(() => ({ returning: mocks.dbInsertReturning })) })),
+    select: vi.fn(() => ({ from: vi.fn(() => ({ where: vi.fn(() => ({ limit: vi.fn().mockResolvedValue([]) })) })) })),
   },
   schema: {
     agentRuns: { id: 'id', storyId: 'story_id', agentType: 'agent_type', status: 'status', input: 'input', output: 'output', startedAt: 'started_at', completedAt: 'completed_at' },
