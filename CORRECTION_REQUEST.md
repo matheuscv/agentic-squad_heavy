@@ -1,34 +1,25 @@
-# Pedido de Correção — Iteração 2/3
+# Pedido de Correção — Iteração 1/3
 ## Problema detectado
-CAUSA RAIZ CONFIRMADA: O CI falha com erro de compilação TypeScript porque `src/tests/integration/qa-correction-loop.integration.test.ts` importa 5 símbolos que NÃO EXISTEM em `src/tests/integration/fixtures.ts`:
-- `QA_HAPPY_PATH_SEQUENCE` — sequência Claude para o Agente QA no caminho feliz (CI passa com ≥ 85% de cobertura)
-- `QA_ONE_CORRECTION_SEQUENCE` — sequência Claude para o Agente QA com 1 ciclo de correção
-- `QA_ESCALATION_SEQUENCE` — sequência Claude para o Agente QA com 3 ciclos de correção (escalação)
-- `COVERAGE_OK` — objeto de cobertura com todas as 4 métricas ≥ 85% (para mocking de get_workflow_run_result)
-- `COVERAGE_LOW` — objeto de cobertura com métricas abaixo de 85% (para mocking de get_workflow_run_result)
+O CI do branch `agent/task-scrum-16` está falhando (conclusion: 'failure') com cobertura global muito abaixo do mínimo de 85%. As métricas atuais são: statements 46.17%, branches 64.33%, functions 54.83%, lines 46.17%.
 
-O arquivo `fixtures.ts` só possui `SCRUM_50`, `SCRUM_51`, `SCRUM_50_DEV_SEQUENCE`, `SCRUM_51_DEV_CORRECTION_SEQUENCE`, `makeToolUseMsg()` e `makeEndTurnMsg()`. Os 5 símbolos QA precisam ser adicionados a `fixtures.ts`.
+O arquivo `src/utils/currency.test.ts` utiliza `vi.spyOn(globalThis, 'Intl', 'get')` para mockar o `Intl.NumberFormat`. Esta abordagem pode estar causando erros no CI, pois `Intl` pode não ser uma propriedade configurável do objeto global em todos os ambientes Node.js, especialmente na versão que roda no CI. Além disso, o fallback dentro de `mockFormat` chama `new Intl.NumberFormat(...)` com o próprio Intl já mockado, o que pode causar recursão infinita ou erros.
 
-Baseando-se na estrutura existente em `fixtures.ts`:
-- `COVERAGE_OK` deve ser um objeto como: `{ total: { statements: { pct: 90 }, branches: { pct: 90 }, functions: { pct: 90 }, lines: { pct: 90 } } }`
-- `COVERAGE_LOW` deve ser um objeto como: `{ total: { statements: { pct: 50 }, branches: { pct: 60 }, functions: { pct: 55 }, lines: { pct: 50 } } }`
-- As 3 sequências QA devem usar `makeToolUseMsg()` para simular as ferramentas que o Agente QA chama (get_workflow_run_result, list_github_directory, read_github_file, write_github_file, create_github_commit, wait_for_ci, create_correction_request, wait_for_dev_correction, escalate_to_human, finish_qa_review)
-
-AÇÃO NECESSÁRIA: Adicionar os 5 exports faltantes ao arquivo `src/tests/integration/fixtures.ts`.
+As correções necessárias são:
+1. Reescrever o arquivo `src/utils/currency.test.ts` para remover o uso de `vi.spyOn(globalThis, 'Intl', 'get')`. Em vez disso, usar uma abordagem mais simples e estável: testar os resultados reais do `Intl.NumberFormat` ou usar `vi.stubGlobal` de forma mais segura.
+2. A melhor abordagem é testar a função com valores reais (sem mock do Intl) usando assertions flexíveis que verificam presença de símbolo de moeda e valores numéricos, sem depender de formatação exacta de locale — já que isso varia entre ambientes.
+3. Garantir que o módulo `src/utils/currency.ts` esteja corretamente implementado e que os testes cubram: caminho feliz para BRL, USD e EUR; valor zero; valor negativo; erro para moeda inválida; arredondamento de decimais.
 ## Arquivos com problemas
-- `src/tests/integration/fixtures.ts`
+- `src/utils/currency.test.ts`
 ## Testes falhando
-- Agente QA — loop de correção > Cenário 1: happy path — CI passa sem correções
-- Agente QA — loop de correção > Cenário 2: 1 ciclo de correção
-- Agente QA — loop de correção > Cenário 3: escala para humano após 3 ciclos
+- currency.test.ts — mock de Intl via vi.spyOn(globalThis, 'Intl', 'get') instável no CI
 ## Cobertura insuficiente
 ```json
 {
-  "src/tests/integration/fixtures.ts": {
-    "statements": 0,
-    "branches": 0,
-    "functions": 0,
-    "lines": 0
+  "src/utils/currency.ts": {
+    "statements": 46.17,
+    "branches": 64.33,
+    "functions": 54.83,
+    "lines": 46.17
   },
   "total": {
     "statements": 46.17,
@@ -39,4 +30,4 @@ AÇÃO NECESSÁRIA: Adicionar os 5 exports faltantes ao arquivo `src/tests/integ
 }
 ```
 ---
-_Gerado pelo Agente QA em 2026-05-26T15:30:03.043Z_
+_Gerado pelo Agente QA em 2026-05-26T15:54:32.554Z_
