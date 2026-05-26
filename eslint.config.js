@@ -11,7 +11,7 @@ module.exports = [
     languageOptions: {
       parser: tsparser,
       parserOptions: {
-        project: "./tsconfig.json",
+        project: "./tsconfig.eslint.json",
       },
       globals: {
         ...globals.node,
@@ -27,6 +27,7 @@ module.exports = [
       "@typescript-eslint/no-explicit-any": "warn",
       "@typescript-eslint/no-floating-promises": "error",
       "no-console": "off",
+      "no-undef": "off",
     },
   },
   {

@@ -12,8 +12,7 @@ name: Agent DEV — CI
 on:
   push:
     branches:
-      - 'dev/**'      # branches do Agente DEV (dev/scrum-15, dev/scrum-16, ...)
-      - 'agent/**'    # branches task-level futuras (agent/task-01, ...)
+      - 'agent/task-*'   # branches do Agente DEV (agent/task-scrum-15, agent/task-scrum-16, ...)
   pull_request:
     branches:
       - master
@@ -25,8 +24,8 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: read
-  pull-requests: write   # necessário para postar comentário de cobertura no PR
+  contents: write          # necessário para git push do .qa-coverage.json no branch
+  pull-requests: write     # necessário para postar comentário de cobertura no PR
   checks: write
 
 jobs:
@@ -61,6 +60,24 @@ jobs:
 
       - name: Testes com cobertura
         run: npm run test:coverage
+
+      # ── Persiste cobertura no branch para leitura pelo Agente QA ────────────────
+      # O commit usa [skip ci] para não disparar outro run do workflow.
+
+      - name: Persiste .qa-coverage.json no branch
+        if: always() && github.event_name == 'push'
+        run: |
+          if [ ! -f coverage/coverage-summary.json ]; then
+            echo "coverage-summary.json não encontrado — pulando persistência"
+            exit 0
+          fi
+          cp coverage/coverage-summary.json .qa-coverage.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .qa-coverage.json
+          git diff --staged --quiet && echo "nenhuma mudança na cobertura" && exit 0
+          git commit -m "ci: atualiza .qa-coverage.json [skip ci]"
+          git push
 
       # ── Artefato de cobertura ─────────────────────────────────────────────────
 

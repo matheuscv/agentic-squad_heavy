@@ -7,6 +7,14 @@ export type CommitResult = {
   url: string;
 };
 
+export type WorkflowRunResult = {
+  runId: number;
+  status: string;
+  conclusion: 'success' | 'failure' | 'cancelled' | 'skipped' | 'timed_out' | null;
+  htmlUrl: string;
+  createdAt: string;
+};
+
 export type DirectoryEntry = {
   name: string;
   type: 'file' | 'dir';
@@ -217,6 +225,83 @@ export async function commitFile(
 }
 
 /**
+ * Cria um commit atômico com múltiplos arquivos usando a Git Data API.
+ * Usa o fluxo: blobs → tree → commit → update ref.
+ */
+export async function commitFiles(
+  files: { path: string; content: string }[],
+  commitMessage: string,
+  branch: string,
+): Promise<CommitResult> {
+  const token = await getInstallationToken();
+  const { owner, repo } = getRepoCoords();
+
+  // 1. SHA do commit pai (HEAD do branch)
+  const refData = await githubFetch<{ object: { sha: string } }>(
+    `/repos/${owner}/${repo}/git/refs/heads/${branch}`,
+    token,
+  );
+  const parentSha = refData.object.sha;
+
+  // 2. SHA da tree base do commit pai
+  const parentCommit = await githubFetch<{ tree: { sha: string } }>(
+    `/repos/${owner}/${repo}/git/commits/${parentSha}`,
+    token,
+  );
+  const baseTreeSha = parentCommit.tree.sha;
+
+  // 3. Cria um blob por arquivo (em paralelo)
+  const blobEntries = await Promise.all(
+    files.map(async ({ path, content }) => {
+      const blob = await githubFetch<{ sha: string }>(
+        `/repos/${owner}/${repo}/git/blobs`,
+        token,
+        {
+          method: 'POST',
+          body: JSON.stringify({ content: Buffer.from(content).toString('base64'), encoding: 'base64' }),
+        },
+      );
+      return { path, sha: blob.sha };
+    }),
+  );
+
+  // 4. Cria tree com todos os blobs
+  const treeData = await githubFetch<{ sha: string }>(
+    `/repos/${owner}/${repo}/git/trees`,
+    token,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        base_tree: baseTreeSha,
+        tree: blobEntries.map((e) => ({ path: e.path, mode: '100644', type: 'blob', sha: e.sha })),
+      }),
+    },
+  );
+
+  // 5. Cria o commit
+  const newCommit = await githubFetch<{ sha: string; html_url?: string }>(
+    `/repos/${owner}/${repo}/git/commits`,
+    token,
+    {
+      method: 'POST',
+      body: JSON.stringify({ message: commitMessage, tree: treeData.sha, parents: [parentSha] }),
+    },
+  );
+
+  // 6. Avança o ponteiro do branch
+  await githubFetch(
+    `/repos/${owner}/${repo}/git/refs/heads/${branch}`,
+    token,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ sha: newCommit.sha, force: false }),
+    },
+  );
+
+  return { sha: newCommit.sha, url: newCommit.html_url ?? '' };
+}
+
+/**
  * Lista arquivos e subdiretórios em um caminho do repositório.
  * Retorna array vazio se o caminho não existir (404) ou não for diretório.
  */
@@ -238,6 +323,94 @@ export async function listDirectory(dirPath: string, branch?: string): Promise<D
     if ((err as Error).message.includes('404')) return [];
     throw err;
   }
+}
+
+// ─── Helper interno ───────────────────────────────────────────────────────────
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// ─── Workflow Runs ────────────────────────────────────────────────────────────
+
+/**
+ * Retorna o run mais recente do workflow de CI para o branch informado, ou null se não houver.
+ */
+export async function getLatestWorkflowRun(branch: string): Promise<WorkflowRunResult | null> {
+  const token = await getInstallationToken();
+  const { owner, repo } = getRepoCoords();
+
+  const data = await githubFetch<{
+    workflow_runs: Array<{
+      id: number;
+      status: string;
+      conclusion: string | null;
+      html_url: string;
+      created_at: string;
+    }>;
+  }>(
+    `/repos/${owner}/${repo}/actions/runs?branch=${encodeURIComponent(branch)}&event=push&per_page=5`,
+    token,
+  );
+
+  const run = data.workflow_runs[0];
+  if (!run) return null;
+
+  return {
+    runId: run.id,
+    status: run.status,
+    conclusion: run.conclusion as WorkflowRunResult['conclusion'],
+    htmlUrl: run.html_url,
+    createdAt: run.created_at,
+  };
+}
+
+/**
+ * Aguarda a conclusão de um novo run de CI com ID maior que afterRunId.
+ * Faz polling a cada 30 s com timeout configurável (padrão 10 min).
+ * Retorna null em caso de timeout.
+ */
+export async function waitForWorkflowCompletion(
+  branch: string,
+  afterRunId: number,
+  timeoutMs: number = 600_000,
+): Promise<WorkflowRunResult | null> {
+  const token = await getInstallationToken();
+  const { owner, repo } = getRepoCoords();
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    await sleep(30_000);
+
+    const data = await githubFetch<{
+      workflow_runs: Array<{
+        id: number;
+        status: string;
+        conclusion: string | null;
+        html_url: string;
+        created_at: string;
+      }>;
+    }>(
+      `/repos/${owner}/${repo}/actions/runs?branch=${encodeURIComponent(branch)}&event=push&per_page=10`,
+      token,
+    );
+
+    const newRun = data.workflow_runs.find(
+      (r) => r.id > afterRunId && r.status === 'completed',
+    );
+
+    if (newRun) {
+      return {
+        runId: newRun.id,
+        status: newRun.status,
+        conclusion: newRun.conclusion as WorkflowRunResult['conclusion'],
+        htmlUrl: newRun.html_url,
+        createdAt: newRun.created_at,
+      };
+    }
+  }
+
+  return null;
 }
 
 /**

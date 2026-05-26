@@ -5,7 +5,7 @@ import { db, schema } from '../db/index';
 import { updateStoryStatus } from '../db/stories';
 import { redisConnection } from '../queue/index';
 import { moveCardTo, addComment } from '../jira/client';
-import { createBranch, readFile, listDirectory, commitFile, createPullRequest, type PullRequestResult } from '../github/client';
+import { createBranch, readFile, listDirectory, commitFiles, createPullRequest, type PullRequestResult } from '../github/client';
 import { childLogger } from '../lib/logger';
 import { DEV_SYSTEM_PROMPT } from './prompts/dev-system-prompt';
 
@@ -19,6 +19,8 @@ export type DevAgentJobData = {
   agentRunId: string;
   summary: string;
   fromStatus: string | null;
+  correctionMode?: boolean;     // true quando invocado pelo Agente QA para corrigir falhas
+  correctionIteration?: number; // ciclo de correção (1–3)
 };
 
 type DevAgentResult = {
@@ -82,7 +84,7 @@ const DEV_TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'write_github_file',
-    description: 'Escreve ou atualiza um arquivo no branch de desenvolvimento e cria um commit. Leia o arquivo existente antes de sobrescrevê-lo.',
+    description: 'Prepara (staging) um arquivo para o próximo commit. Chame create_github_commit quando quiser persistir um conjunto de arquivos de uma vez.',
     input_schema: {
       type: 'object' as const,
       properties: {
@@ -94,12 +96,22 @@ const DEV_TOOLS: Anthropic.Tool[] = [
           type: 'string',
           description: 'Conteúdo COMPLETO do arquivo — inclua todo o código, não apenas o trecho alterado',
         },
+      },
+      required: ['file_path', 'content'],
+    },
+  },
+  {
+    name: 'create_github_commit',
+    description: 'Cria um commit atômico com todos os arquivos preparados via write_github_file. Chame após preparar um conjunto lógico de arquivos (ex: módulo + testes).',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
         commit_message: {
           type: 'string',
-          description: 'Mensagem do commit seguindo a convenção (ex: "feat(TASK-01): migration Drizzle tabelas users")',
+          description: 'Mensagem do commit seguindo a convenção Conventional Commits (ex: "feat(TASK-01): migration Drizzle tabelas users")',
         },
       },
-      required: ['file_path', 'content', 'commit_message'],
+      required: ['commit_message'],
     },
   },
   {
@@ -129,8 +141,10 @@ async function runDevAgent(
   summary: string,
   agentRunId: string,
   devBranch: string,
+  correctionMode: boolean = false,
+  correctionIteration: number = 1,
 ): Promise<DevAgentResult> {
-  const jobLog = log.child({ jiraKey, agentRunId, devBranch });
+  const jobLog = log.child({ jiraKey, agentRunId, devBranch, correctionMode });
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   const model = process.env.ANTHROPIC_MODEL ?? 'claude-opus-4-7';
 
@@ -139,12 +153,24 @@ async function runDevAgent(
 
   // Estado acumulado durante a execução
   const filesWritten: string[] = [];
+  const stagedFiles = new Map<string, string>(); // path → content
   let prResult: PullRequestResult | null = null;
 
-  const messages: Anthropic.MessageParam[] = [
-    {
-      role: 'user',
-      content: `Data atual: ${today}
+  const initialMessage = correctionMode
+    ? `Data atual: ${today}
+História: ${jiraKey} — "${summary}"
+Branch: ${devBranch}
+Ciclo de correção: ${correctionIteration}/3
+
+O Agente QA detectou problemas que precisam ser corrigidos neste branch.
+
+Siga estas etapas:
+1. Leia "CORRECTION_REQUEST.md" no branch "${devBranch}" para entender o que precisa ser corrigido
+2. Explore os arquivos mencionados no request com read_github_file e list_github_directory
+3. Implemente as correções nos arquivos de código e/ou testes necessários
+4. Crie os commits com create_github_commit
+5. NÃO chame create_pull_request — o PR já existe e será reutilizado`
+    : `Data atual: ${today}
 História: ${jiraKey} — "${summary}"
 Branch do plano: ${prdBranch}
 Branch de desenvolvimento: ${devBranch} (já criado, baseado em master)
@@ -156,8 +182,10 @@ Lembre-se:
 2. Explore o código existente antes de escrever qualquer arquivo
 3. Implemente na ordem das Ondas de Execução do PLANO
 4. Escreva testes unitários para cada módulo implementado
-5. Finalize obrigatoriamente com create_pull_request`,
-    },
+5. Finalize obrigatoriamente com create_pull_request`;
+
+  const messages: Anthropic.MessageParam[] = [
+    { role: 'user', content: initialMessage },
   ];
 
   jobLog.debug({ model }, 'iniciando loop de tool-use com Claude');
@@ -180,17 +208,17 @@ Lembre-se:
 
     // Resposta final
     if (response.stop_reason === 'end_turn') {
-      if (!prResult) {
+      if (!correctionMode && !prResult) {
         throw new Error('Agente DEV encerrou sem criar o Pull Request — verifique o loop de tools');
       }
       jobLog.info(
-        { prNumber: prResult.number, filesWritten: filesWritten.length },
-        'agente DEV concluiu a implementação',
+        { correctionMode, prNumber: prResult?.number ?? 0, filesWritten: filesWritten.length },
+        'agente DEV concluiu',
       );
       return {
-        prNumber: prResult.number,
-        prUrl: prResult.url,
-        prHtmlUrl: prResult.html_url,
+        prNumber: prResult?.number ?? 0,
+        prUrl: prResult?.url ?? '',
+        prHtmlUrl: prResult?.html_url ?? '',
         filesWritten,
         branch: devBranch,
       };
@@ -218,18 +246,34 @@ Lembre-se:
             jobLog.debug({ dir_path, count: entries.length }, 'list_github_directory executado');
 
           } else if (block.name === 'write_github_file') {
-            const { file_path, content, commit_message } = block.input as {
-              file_path: string;
-              content: string;
-              commit_message: string;
-            };
-            const commitResult = await commitFile(file_path, content, commit_message, devBranch);
-            filesWritten.push(file_path);
-            result = JSON.stringify({ success: true, sha: commitResult.sha, file_path });
-            jobLog.info({ file_path, sha: commitResult.sha }, 'arquivo escrito no branch');
+            const { file_path, content } = block.input as { file_path: string; content: string };
+            stagedFiles.set(file_path, content);
+            result = JSON.stringify({ staged: true, file_path, total_staged: stagedFiles.size });
+            jobLog.debug({ file_path, total_staged: stagedFiles.size }, 'arquivo preparado para commit');
+
+          } else if (block.name === 'create_github_commit') {
+            const { commit_message } = block.input as { commit_message: string };
+            if (stagedFiles.size === 0) {
+              result = JSON.stringify({ success: false, reason: 'nenhum arquivo preparado para commit' });
+            } else {
+              const batch = Array.from(stagedFiles.entries()).map(([path, content]) => ({ path, content }));
+              const commitResult = await commitFiles(batch, commit_message, devBranch);
+              for (const { path } of batch) filesWritten.push(path);
+              stagedFiles.clear();
+              result = JSON.stringify({ success: true, sha: commitResult.sha, files_committed: batch.length });
+              jobLog.info({ sha: commitResult.sha, files: batch.length }, 'commit atômico criado');
+            }
 
           } else if (block.name === 'create_pull_request') {
             const { title, body } = block.input as { title: string; body: string };
+            // Commit automático de arquivos ainda em staging antes de criar o PR
+            if (stagedFiles.size > 0) {
+              const remaining = Array.from(stagedFiles.entries()).map(([path, content]) => ({ path, content }));
+              const autoCommit = await commitFiles(remaining, 'chore: commit final de arquivos pendentes', devBranch);
+              for (const { path } of remaining) filesWritten.push(path);
+              stagedFiles.clear();
+              jobLog.info({ sha: autoCommit.sha, files: remaining.length }, 'auto-commit de arquivos pendentes antes do PR');
+            }
             prResult = await createPullRequest(title, body, devBranch);
             result = JSON.stringify(prResult);
             jobLog.info({ prNumber: prResult.number, prHtmlUrl: prResult.html_url }, 'PR criado');
@@ -258,11 +302,11 @@ Lembre-se:
 // ─── Processador do job DEV ───────────────────────────────────────────────────
 
 async function processDevJob(job: Job<DevAgentJobData>): Promise<unknown> {
-  const { storyId, jiraKey, agentRunId, summary } = job.data;
+  const { storyId, jiraKey, agentRunId, summary, correctionMode, correctionIteration } = job.data;
   const startedAt = new Date();
-  const jobLog = log.child({ jiraKey, agentRunId, storyId });
+  const jobLog = log.child({ jiraKey, agentRunId, storyId, correctionMode });
 
-  jobLog.info('iniciando execução do agente DEV');
+  jobLog.info(correctionMode ? 'iniciando correção DEV (modo correção)' : 'iniciando execução do agente DEV');
 
   // 1. Marca run como 'running'
   await db
@@ -271,18 +315,34 @@ async function processDevJob(job: Job<DevAgentJobData>): Promise<unknown> {
     .where(eq(schema.agentRuns.id, agentRunId));
 
   try {
-    // 2. Cria branch de desenvolvimento
-    const devBranch = `dev/${jiraKey.toLowerCase()}`;
-    await createBranch(devBranch);
-    jobLog.debug({ devBranch }, 'branch de desenvolvimento criado');
+    // 2. Cria (ou reutiliza) branch de desenvolvimento
+    const devBranch = `agent/task-${jiraKey.toLowerCase()}`;
+    await createBranch(devBranch); // idempotente: ignora 422 se branch já existe
+    jobLog.debug({ devBranch }, 'branch verificado/criado');
 
     // 3. Executa o agente DEV
-    const devResult = await runDevAgent(jiraKey, summary, agentRunId, devBranch);
+    const devResult = await runDevAgent(
+      jiraKey, summary, agentRunId, devBranch,
+      correctionMode ?? false, correctionIteration ?? 1,
+    );
 
     jobLog.info(
       { filesWritten: devResult.filesWritten.length, prNumber: devResult.prNumber },
-      'implementação concluída pelo Claude',
+      correctionMode ? 'correção concluída pelo Claude' : 'implementação concluída pelo Claude',
     );
+
+    // Modo correção: apenas persiste o resultado e retorna — QA assume o controle
+    if (correctionMode) {
+      const completedAt = new Date();
+      const durationMs = completedAt.getTime() - startedAt.getTime();
+      const output = { correctionMode: true, filesWritten: devResult.filesWritten, iteration: correctionIteration };
+      await db
+        .update(schema.agentRuns)
+        .set({ status: 'completed', output, durationMs, completedAt })
+        .where(eq(schema.agentRuns.id, agentRunId));
+      jobLog.info({ durationMs, files: devResult.filesWritten.length }, 'correção DEV concluída');
+      return output;
+    }
 
     // 4. Salva artifact no banco
     const [artifact] = await db
