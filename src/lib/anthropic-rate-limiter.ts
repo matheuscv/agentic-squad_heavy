@@ -49,18 +49,22 @@ export async function waitForAnthropicCapacity(
     const now = Date.now();
     const eid = `${now}-${Math.random().toString(36).slice(2, 9)}`;
 
-    const result = (await redis.eval(
-      ACQUIRE_SCRIPT,
-      1,
-      RATE_LIMIT_KEY,
-      now.toString(),
-      WINDOW_MS.toString(),
-      estimatedTokens.toString(),
-      MAX_TPM.toString(),
-      eid,
-    )) as number;
+    try {
+      const result = (await redis.eval(
+        ACQUIRE_SCRIPT,
+        1,
+        RATE_LIMIT_KEY,
+        now.toString(),
+        WINDOW_MS.toString(),
+        estimatedTokens.toString(),
+        MAX_TPM.toString(),
+        eid,
+      )) as number;
 
-    if (result === -1) return; // capacidade reservada
+      if (result === -1) return; // capacidade reservada
+    } catch {
+      // Redis indisponível — prossegue após deadline
+    }
 
     // Espera proporcional ao quanto a janela está cheia
     const waitMs = Math.min(15_000, WINDOW_MS / 4);

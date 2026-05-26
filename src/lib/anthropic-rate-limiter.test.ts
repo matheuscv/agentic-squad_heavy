@@ -155,9 +155,6 @@ describe('waitForAnthropicCapacity', () => {
     // Avança para o deadline
     await advanceTimers(200_000);
 
-    // Pode rejeitar ou resolver — não deve lançar de forma não-controlada
-    await expect(promise).resolves.toBeUndefined().catch(() => {
-      // Se rejeitar, não é erro de teste
-    });
+    await expect(promise).resolves.toBeUndefined();
   });
 });
