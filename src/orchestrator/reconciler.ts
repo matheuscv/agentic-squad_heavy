@@ -89,7 +89,7 @@ async function reconcile(): Promise<void> {
 
     if (jiraCurrentStatus === story.jiraStatus) continue;
 
-    const dbOrder = getStateOrder(story.jiraStatus);
+    const dbOrder = getStateOrder(story.jiraStatus ?? '');
     const jiraOrder = getStateOrder(jiraCurrentStatus);
 
     if (!isKnownStatus(jiraCurrentStatus)) {
