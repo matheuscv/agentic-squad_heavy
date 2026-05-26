@@ -20,7 +20,7 @@ vi.mock('bullmq', () => {
     close: vi.fn().mockResolvedValue(undefined),
     on: vi.fn(),
   }));
-  const MockWorker = vi.fn().mockImplementation((_name: string, processor: Function) => {
+  const MockWorker = vi.fn().mockImplementation((_name: string, processor: (...args: unknown[]) => unknown) => {
     (MockWorker as any)._lastProcessor = processor;
     return mockWorkerInstance;
   });
@@ -37,13 +37,17 @@ vi.mock('../db/index', () => ({
   db: {
     select: vi.fn().mockReturnThis(),
     from: vi.fn().mockReturnThis(),
-    where: vi.fn().mockResolvedValue([{ id: 'story-uuid-1', jiraKey: 'SCRUM-1', status: 'em_revisao_qa' }]),
+    where: vi.fn().mockReturnThis(),
+    limit: vi.fn().mockResolvedValue([]),
     update: vi.fn().mockReturnThis(),
     set: vi.fn().mockReturnThis(),
+    insert: vi.fn().mockReturnThis(),
+    values: vi.fn().mockReturnThis(),
+    returning: vi.fn().mockResolvedValue([{ id: 'run-dev-uuid-1' }]),
   },
   schema: {
     stories: { id: 'id', jiraKey: 'jiraKey', status: 'status' },
-    agentRuns: { id: 'id', storyId: 'storyId', agentType: 'agentType', status: 'status' },
+    agentRuns: { id: 'id', storyId: 'storyId', agentType: 'agentType', status: 'status', output: 'output', errorMessage: 'errorMessage', startedAt: 'startedAt', completedAt: 'completedAt' },
   },
 }));
 
@@ -88,20 +92,15 @@ vi.mock('../lib/anthropic-rate-limiter', () => ({
   waitForAnthropicCapacity: vi.fn().mockResolvedValue(undefined),
 }));
 
+const mockQaAnthropicCreate = vi.hoisted(() => vi.fn().mockResolvedValue({
+  stop_reason: 'end_turn',
+  usage: { input_tokens: 120, output_tokens: 250 },
+  content: [{ type: 'text', text: 'Revisão QA concluída.' }],
+}));
+
 vi.mock('@anthropic-ai/sdk', () => {
   const MockAnthropic = vi.fn().mockImplementation(() => ({
-    messages: {
-      create: vi.fn().mockResolvedValue({
-        stop_reason: 'end_turn',
-        usage: { input_tokens: 120, output_tokens: 250 },
-        content: [
-          {
-            type: 'text',
-            text: 'Revisão QA concluída. Cobertura >= 85%.',
-          },
-        ],
-      }),
-    },
+    messages: { create: mockQaAnthropicCreate },
   }));
   return { default: MockAnthropic };
 });
@@ -145,13 +144,19 @@ describe('qa-agent — module exports', () => {
 });
 
 describe('qa-agent — Worker registrado', () => {
-  it('Worker é instanciado ao importar o módulo', async () => {
+  it('Worker é instanciado ao chamar createQaAgentWorker()', async () => {
+    vi.clearAllMocks();
+    const { createQaAgentWorker } = await import('./qa-agent');
     const { Worker } = await import('bullmq');
+    createQaAgentWorker();
     expect(Worker).toHaveBeenCalled();
   });
 
   it('Worker é registrado na fila "agent-qa"', async () => {
+    vi.clearAllMocks();
+    const { createQaAgentWorker } = await import('./qa-agent');
     const { Worker } = await import('bullmq');
+    createQaAgentWorker();
     const calls = (Worker as unknown as vi.MockedFunction<any>).mock.calls;
     const qaCall = calls.find((c: any[]) => c[0] === 'agent-qa');
     expect(qaCall).toBeDefined();
@@ -181,6 +186,18 @@ describe('qa-agent — job processor', () => {
     const processor = (Worker as unknown as any)._lastProcessor;
     if (!processor) return;
 
+    mockQaAnthropicCreate
+      .mockResolvedValueOnce({
+        stop_reason: 'tool_use',
+        usage: { input_tokens: 120, output_tokens: 250 },
+        content: [{ type: 'tool_use', id: 'tool-qa-1', name: 'finish_qa_review', input: { passed: true, summary: 'Cobertura >= 85%', iterations: 1 } }],
+      })
+      .mockResolvedValueOnce({
+        stop_reason: 'end_turn',
+        usage: { input_tokens: 40, output_tokens: 10 },
+        content: [{ type: 'text', text: 'Done.' }],
+      });
+
     const mockJob = {
       id: 'job-qa-id-1',
       data: {
@@ -198,6 +215,18 @@ describe('qa-agent — job processor', () => {
     const { Worker } = await import('bullmq');
     const processor = (Worker as unknown as any)._lastProcessor;
     if (!processor) return;
+
+    mockQaAnthropicCreate
+      .mockResolvedValueOnce({
+        stop_reason: 'tool_use',
+        usage: { input_tokens: 120, output_tokens: 250 },
+        content: [{ type: 'tool_use', id: 'tool-qa-2', name: 'finish_qa_review', input: { passed: false, summary: 'Cobertura insuficiente', iterations: 1 } }],
+      })
+      .mockResolvedValueOnce({
+        stop_reason: 'end_turn',
+        usage: { input_tokens: 40, output_tokens: 10 },
+        content: [{ type: 'text', text: 'Done.' }],
+      });
 
     const mockJob = {
       id: 'job-qa-id-2',

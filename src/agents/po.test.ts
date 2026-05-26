@@ -21,7 +21,7 @@ vi.mock('bullmq', () => {
     close: vi.fn().mockResolvedValue(undefined),
     on: vi.fn(),
   }));
-  const MockWorker = vi.fn().mockImplementation((_name: string, processor: Function) => {
+  const MockWorker = vi.fn().mockImplementation((_name: string, processor: (...args: unknown[]) => unknown) => {
     // Expõe o processor para os testes
     (MockWorker as any)._lastProcessor = processor;
     return mockWorkerInstance;
@@ -38,10 +38,15 @@ vi.mock('../db/index', () => ({
     where: vi.fn().mockResolvedValue([{ id: 'story-uuid-1', jiraKey: 'SCRUM-1', status: 'a_refinar' }]),
     update: vi.fn().mockReturnThis(),
     set: vi.fn().mockReturnThis(),
+    insert: vi.fn().mockReturnThis(),
+    values: vi.fn().mockReturnThis(),
+    returning: vi.fn().mockResolvedValue([{ id: 'agent-run-uuid-1' }]),
   },
   schema: {
     stories: { id: 'id', jiraKey: 'jiraKey', status: 'status' },
     storyStatusEnum: { enumValues: ['backlog', 'a_refinar'] },
+    agentRuns: { id: 'id', status: 'status', startedAt: 'startedAt', completedAt: 'completedAt', output: 'output' },
+    artifacts: { id: 'id', storyId: 'storyId', artifactType: 'artifactType', filePath: 'filePath', content: 'content', commitSha: 'commitSha' },
   },
 }));
 
@@ -127,14 +132,19 @@ describe('po agent — extractTextFromAdf (via processamento interno)', () => {
 });
 
 describe('po agent — Worker criado', () => {
-  it('Worker é instanciado ao importar o módulo', async () => {
+  it('Worker é instanciado ao chamar createPoAgentWorker()', async () => {
+    vi.clearAllMocks();
+    const { createPoAgentWorker } = await import('./po');
     const { Worker } = await import('bullmq');
-    // Verifica que Worker foi chamado (instanciado ao importar po.ts)
+    createPoAgentWorker();
     expect(Worker).toHaveBeenCalled();
   });
 
   it('Worker é criado com a fila correta "agent-po"', async () => {
+    vi.clearAllMocks();
+    const { createPoAgentWorker } = await import('./po');
     const { Worker } = await import('bullmq');
+    createPoAgentWorker();
     const calls = (Worker as unknown as vi.MockedFunction<any>).mock.calls;
     const poWorkerCall = calls.find((c: any[]) => c[0] === 'agent-po');
     expect(poWorkerCall).toBeDefined();

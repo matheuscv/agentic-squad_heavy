@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // ─── Mocks de infraestrutura ──────────────────────────────────────────────────
 
@@ -20,7 +20,7 @@ vi.mock('bullmq', () => {
     close: vi.fn().mockResolvedValue(undefined),
     on: vi.fn(),
   }));
-  const MockWorker = vi.fn().mockImplementation((_name: string, processor: Function) => {
+  const MockWorker = vi.fn().mockImplementation((_name: string, processor: (...args: unknown[]) => unknown) => {
     (MockWorker as any)._lastProcessor = processor;
     return mockWorkerInstance;
   });
@@ -39,9 +39,14 @@ vi.mock('../db/index', () => ({
     where: vi.fn().mockResolvedValue([{ id: 'story-uuid-1', jiraKey: 'SCRUM-1', status: 'em_desenvolvimento' }]),
     update: vi.fn().mockReturnThis(),
     set: vi.fn().mockReturnThis(),
+    insert: vi.fn().mockReturnThis(),
+    values: vi.fn().mockReturnThis(),
+    returning: vi.fn().mockResolvedValue([{ id: 'agent-run-uuid-1' }]),
   },
   schema: {
     stories: { id: 'id', jiraKey: 'jiraKey', status: 'status' },
+    agentRuns: { id: 'id', status: 'status', startedAt: 'startedAt', completedAt: 'completedAt', output: 'output' },
+    artifacts: { id: 'id', storyId: 'storyId', artifactType: 'artifactType', filePath: 'filePath', content: 'content', commitSha: 'commitSha' },
   },
 }));
 
@@ -84,20 +89,15 @@ vi.mock('../lib/anthropic-rate-limiter', () => ({
   waitForAnthropicCapacity: vi.fn().mockResolvedValue(undefined),
 }));
 
+const mockAnthropicCreate = vi.hoisted(() => vi.fn().mockResolvedValue({
+  stop_reason: 'end_turn',
+  usage: { input_tokens: 100, output_tokens: 300 },
+  content: [{ type: 'text', text: 'Implementação concluída com sucesso.' }],
+}));
+
 vi.mock('@anthropic-ai/sdk', () => {
   const MockAnthropic = vi.fn().mockImplementation(() => ({
-    messages: {
-      create: vi.fn().mockResolvedValue({
-        stop_reason: 'end_turn',
-        usage: { input_tokens: 100, output_tokens: 300 },
-        content: [
-          {
-            type: 'text',
-            text: 'Implementação concluída com sucesso. PR criado.',
-          },
-        ],
-      }),
-    },
+    messages: { create: mockAnthropicCreate },
   }));
   return { default: MockAnthropic };
 });
@@ -155,13 +155,19 @@ describe('dev-agent — module exports', () => {
 });
 
 describe('dev-agent — Worker registrado', () => {
-  it('Worker é instanciado ao importar o módulo', async () => {
+  it('Worker é instanciado ao chamar createDevAgentWorker()', async () => {
+    vi.clearAllMocks();
+    const { createDevAgentWorker } = await import('./dev-agent');
     const { Worker } = await import('bullmq');
+    createDevAgentWorker();
     expect(Worker).toHaveBeenCalled();
   });
 
   it('Worker é registrado na fila "agent-dev"', async () => {
+    vi.clearAllMocks();
+    const { createDevAgentWorker } = await import('./dev-agent');
     const { Worker } = await import('bullmq');
+    createDevAgentWorker();
     const calls = (Worker as unknown as vi.MockedFunction<any>).mock.calls;
     const devCall = calls.find((c: any[]) => c[0] === 'agent-dev');
     expect(devCall).toBeDefined();
@@ -185,6 +191,18 @@ describe('dev-agent — job processor execução normal', () => {
     const { Worker } = await import('bullmq');
     const processor = (Worker as unknown as any)._lastProcessor;
     if (!processor) return;
+
+    mockAnthropicCreate
+      .mockResolvedValueOnce({
+        stop_reason: 'tool_use',
+        usage: { input_tokens: 100, output_tokens: 300 },
+        content: [{ type: 'tool_use', id: 'tool-pr-1', name: 'create_pull_request', input: { title: 'feat: add formatCurrency', body: 'Implements currency formatter' } }],
+      })
+      .mockResolvedValueOnce({
+        stop_reason: 'end_turn',
+        usage: { input_tokens: 50, output_tokens: 20 },
+        content: [{ type: 'text', text: 'PR criado.' }],
+      });
 
     const mockJob = {
       id: 'job-dev-id-1',

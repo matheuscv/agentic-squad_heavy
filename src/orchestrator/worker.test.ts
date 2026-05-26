@@ -22,7 +22,7 @@ vi.mock('bullmq', () => {
     close: vi.fn().mockResolvedValue(undefined),
     on: vi.fn(),
   }));
-  const MockWorker = vi.fn().mockImplementation((_name: string, processor: Function) => {
+  const MockWorker = vi.fn().mockImplementation((_name: string, processor: (...args: unknown[]) => unknown) => {
     if (!(MockWorker as any)._processors) (MockWorker as any)._processors = {};
     (MockWorker as any)._processors[_name] = processor;
     (MockWorker as any)._lastProcessor = processor;
@@ -59,6 +59,7 @@ vi.mock('../db/index', () => ({
 
 vi.mock('../db/stories', () => ({
   updateStoryStatus: vi.fn().mockResolvedValue(undefined),
+  upsertStory: vi.fn().mockResolvedValue({ id: 'story-uuid-1', jiraKey: 'SCRUM-1', jiraSummary: 'Add currency formatter', status: 'a_refinar' }),
 }));
 
 vi.mock('../queue/index', () => ({
@@ -126,13 +127,19 @@ describe('orchestrator/worker — module loads', () => {
 });
 
 describe('orchestrator/worker — Worker BullMQ registrado', () => {
-  it('Worker é criado ao importar o módulo', async () => {
+  it('Worker é criado ao chamar createOrchestratorWorker()', async () => {
+    vi.clearAllMocks();
+    const { createOrchestratorWorker } = await import('./worker');
     const { Worker } = await import('bullmq');
+    createOrchestratorWorker();
     expect(Worker).toHaveBeenCalled();
   });
 
   it('Worker é criado com a fila "orchestrator"', async () => {
+    vi.clearAllMocks();
+    const { createOrchestratorWorker } = await import('./worker');
     const { Worker } = await import('bullmq');
+    createOrchestratorWorker();
     const calls = (Worker as unknown as vi.MockedFunction<any>).mock.calls;
     const orchCall = calls.find((c: any[]) => c[0] === 'orchestrator');
     expect(orchCall).toBeDefined();
@@ -153,11 +160,13 @@ describe('orchestrator/worker — job processor (evento webhook)', () => {
     const mockJob = {
       id: 'orch-job-1',
       data: {
-        event: 'jira:issue_updated',
-        issueKey: 'SCRUM-1',
+        jiraKey: 'SCRUM-1',
+        issueId: '10001',
+        summary: 'Add currency formatter',
         fromStatus: 'Backlog',
         toStatus: 'A Refinar',
-        timestamp: new Date().toISOString(),
+        currentStatus: 'A Refinar',
+        receivedAt: new Date().toISOString(),
       },
     };
     await expect(processor(mockJob)).resolves.toBeDefined();
@@ -172,11 +181,13 @@ describe('orchestrator/worker — job processor (evento webhook)', () => {
     const mockJob = {
       id: 'orch-job-2',
       data: {
-        event: 'jira:issue_updated',
-        issueKey: 'SCRUM-2',
+        jiraKey: 'SCRUM-2',
+        issueId: '10002',
+        summary: 'Add endpoint',
         fromStatus: 'A Refinar',
-        toStatus: 'A Definir',
-        timestamp: new Date().toISOString(),
+        toStatus: 'Em Refinamento',
+        currentStatus: 'Em Refinamento',
+        receivedAt: new Date().toISOString(),
       },
     };
     await expect(processor(mockJob)).resolves.toBeDefined();
@@ -191,11 +202,13 @@ describe('orchestrator/worker — job processor (evento webhook)', () => {
     const mockJob = {
       id: 'orch-job-3',
       data: {
-        event: 'jira:issue_updated',
-        issueKey: 'SCRUM-3',
-        fromStatus: 'A Definir',
+        jiraKey: 'SCRUM-3',
+        issueId: '10003',
+        summary: 'Implement feature',
+        fromStatus: 'Plano Validado',
         toStatus: 'Em Desenvolvimento',
-        timestamp: new Date().toISOString(),
+        currentStatus: 'Em Desenvolvimento',
+        receivedAt: new Date().toISOString(),
       },
     };
     await expect(processor(mockJob)).resolves.toBeDefined();
@@ -210,11 +223,13 @@ describe('orchestrator/worker — job processor (evento webhook)', () => {
     const mockJob = {
       id: 'orch-job-4',
       data: {
-        event: 'jira:issue_updated',
-        issueKey: 'SCRUM-4',
-        fromStatus: 'Backlog',
+        jiraKey: 'SCRUM-4',
+        issueId: '10004',
+        summary: 'Unknown task',
+        fromStatus: null,
         toStatus: 'Status Desconhecido',
-        timestamp: new Date().toISOString(),
+        currentStatus: 'Status Desconhecido',
+        receivedAt: new Date().toISOString(),
       },
     };
     await expect(processor(mockJob)).resolves.toBeDefined();
