@@ -19,7 +19,8 @@
     "db:studio": "drizzle-kit studio",
     "typecheck": "tsc --noEmit",
     "render:setup-env": "tsx --env-file=.env scripts/setup-render-env.ts",
-    "render:deploy": "tsx --env-file=.env scripts/deploy-render.ts"
+    "render:deploy": "tsx --env-file=.env scripts/deploy-render.ts",
+    "kill-jobs": "tsx --env-file=.env scripts/kill-jobs.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.55.0",
