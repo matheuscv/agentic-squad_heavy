@@ -45,7 +45,7 @@ const mocks = vi.hoisted(() => ({
   // DB
   dbUpdateWhere:     vi.fn().mockResolvedValue([]),
   dbInsertReturning: vi.fn().mockResolvedValue([{ id: 'new-run-uuid' }]),
-  dbSelectWhere:     vi.fn(),
+  dbSelectWhere:     vi.fn().mockResolvedValue([]),
 
   // Stories
   updateStoryStatus: vi.fn().mockResolvedValue(undefined),
@@ -87,10 +87,34 @@ vi.mock('../../db/index', () => ({
   db: {
     update: vi.fn(() => ({ set: vi.fn(() => ({ where: mocks.dbUpdateWhere })) })),
     insert: vi.fn(() => ({ values: vi.fn(() => ({ returning: mocks.dbInsertReturning })) })),
-    select: vi.fn(() => ({ from: vi.fn(() => ({ where: mocks.dbSelectWhere })) })),
+    select: vi.fn(() => ({
+      from: vi.fn(() => ({
+        where: vi.fn(() => {
+          // Retorna um objeto lazy que é awaitable diretamente E tem .limit()
+          // Necessário porque wait_for_dev_correction usa .where() sem .limit(),
+          // mas create_correction_request usa .where().limit(1) para deduplicação.
+          const lazy = {
+            limit: mocks.dbSelectWhere,
+            then(
+              resolve: (v: unknown) => unknown,
+              reject: (e: unknown) => unknown,
+            ) {
+              return mocks.dbSelectWhere().then(resolve, reject);
+            },
+            catch(reject: (e: unknown) => unknown) {
+              return mocks.dbSelectWhere().catch(reject);
+            },
+            finally(f: () => void) {
+              return mocks.dbSelectWhere().finally(f);
+            },
+          };
+          return lazy;
+        }),
+      })),
+    })),
   },
   schema: {
-    agentRuns: { id: 'id', status: 'status', output: 'output', startedAt: 'started_at', completedAt: 'completed_at', durationMs: 'duration_ms', errorMessage: 'error_message' },
+    agentRuns: { id: 'id', storyId: 'story_id', agentType: 'agent_type', status: 'status', output: 'output', startedAt: 'started_at', completedAt: 'completed_at', durationMs: 'duration_ms', errorMessage: 'error_message' },
     artifacts: {},
     stories:   { jiraKey: 'jira_key' },
   },
@@ -117,6 +141,11 @@ function makeQaJob(data: QaAgentJobData): Job<QaAgentJobData> {
 
 function loadMockSequence(sequence: ReturnType<typeof import('./fixtures').makeToolUseMsg>[]) {
   vi.clearAllMocks();
+  // mockReset limpa a fila "once" de chamadas anteriores, evitando sangramento entre testes
+  mocks.dbSelectWhere.mockReset();
+  mocks.dbSelectWhere.mockResolvedValue([]);
+  mocks.dbInsertReturning.mockResolvedValue([{ id: 'new-run-uuid' }]);
+  mocks.dbUpdateWhere.mockResolvedValue([]);
   process.env['QA_POLL_INTERVAL_MS'] = '0';
   for (const msg of sequence) {
     mocks.messagesCreate.mockResolvedValueOnce(msg);
@@ -263,12 +292,15 @@ describe('Agente QA — Loop de Correção (histórias reais)', () => {
         return Promise.resolve('(conteúdo do arquivo)');
       });
 
-      // DEV correction run: poll retorna "completed" na primeira chamada
-      mocks.dbSelectWhere.mockResolvedValue([{
-        status:       'completed',
-        output:       { correctionMode: true, filesWritten: ['src/routes/ping.ts'] },
-        errorMessage: null,
-      }]);
+      // Chamada 1 (create_correction_request .limit(1)): dedup → sem run ativo → cria novo
+      // Chamada 2 (wait_for_dev_correction .where()): poll → run completado
+      mocks.dbSelectWhere
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{
+          status:       'completed',
+          output:       { correctionMode: true, filesWritten: ['src/routes/ping.ts'] },
+          errorMessage: null,
+        }]);
 
       // CI wait retorna novo run
       mocks.waitForWorkflowCompletion.mockResolvedValue({
@@ -387,12 +419,15 @@ describe('Agente QA — Loop de Correção (histórias reais)', () => {
         return Promise.resolve('(conteúdo)');
       });
 
-      // DEV correction runs: sempre completa (mas CI ainda falha)
-      mocks.dbSelectWhere.mockResolvedValue([{
-        status:       'completed',
-        output:       { correctionMode: true },
-        errorMessage: null,
-      }]);
+      // 3 ciclos: cada ciclo tem dedup (.limit(1) → []) + poll (.where() → completed)
+      const completedRun = { status: 'completed', output: { correctionMode: true }, errorMessage: null };
+      mocks.dbSelectWhere
+        .mockResolvedValueOnce([])           // ciclo 1: dedup → sem run ativo
+        .mockResolvedValueOnce([completedRun]) // ciclo 1: poll → concluído
+        .mockResolvedValueOnce([])           // ciclo 2: dedup
+        .mockResolvedValueOnce([completedRun]) // ciclo 2: poll
+        .mockResolvedValueOnce([])           // ciclo 3: dedup
+        .mockResolvedValueOnce([completedRun]); // ciclo 3: poll
 
       // wait_for_ci retorna run (mas CI ainda falha)
       mocks.waitForWorkflowCompletion.mockResolvedValue({

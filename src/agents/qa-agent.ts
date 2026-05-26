@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { Queue, Worker, type Job } from 'bullmq';
-import { eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { db, schema } from '../db/index';
 import { updateStoryStatus } from '../db/stories';
 import { redisConnection } from '../queue/index';
@@ -14,10 +14,29 @@ import {
 } from '../github/client';
 import { devAgentQueue } from './dev-agent';
 import { childLogger } from '../lib/logger';
+import { waitForAnthropicCapacity } from '../lib/anthropic-rate-limiter';
 import { QA_SYSTEM_PROMPT } from './prompts/qa-system-prompt';
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Substitui o conteúdo de tool_results antigos por placeholder para evitar explosão de contexto.
+// Mantém intactos os últimos keepLastTurns turnos (cada turno = 1 assistant + 1 user).
+function pruneOldToolResults(messages: Anthropic.MessageParam[], keepLastTurns: number = 5): void {
+  const keepCount = keepLastTurns * 2 + 1; // +1 para a mensagem inicial do usuário
+  if (messages.length <= keepCount) return;
+  const pruneUntil = messages.length - keepCount;
+  for (let i = 1; i < pruneUntil; i++) {
+    const msg = messages[i];
+    if (msg.role === 'user' && Array.isArray(msg.content)) {
+      msg.content = (msg.content as Anthropic.ToolResultBlockParam[]).map((block) =>
+        block.type === 'tool_result'
+          ? { ...block, content: '[omitido — conteúdo removido para controle de contexto]' }
+          : block,
+      );
+    }
+  }
 }
 
 const log = childLogger({ module: 'agent.qa' });
@@ -45,8 +64,8 @@ type QaAgentResult = {
 export const qaAgentQueue = new Queue<QaAgentJobData>('agent-qa', {
   connection: redisConnection,
   defaultJobOptions: {
-    attempts: 2,
-    backoff: { type: 'exponential', delay: 15_000 },
+    attempts: 4,
+    backoff: { type: 'exponential', delay: 60_000 },
     removeOnComplete: { count: 25 },
     removeOnFail: { count: 10 },
   },
@@ -287,10 +306,11 @@ async function runQaAgent(
     },
   ];
 
-  jobLog.debug({ model }, 'iniciando loop de tool-use QA com Claude');
+  jobLog.info({ model }, 'iniciando loop de tool-use QA com Claude');
 
-  // QA pode ter ciclos de espera de 10 min cada → até 60 turnos
-  for (let turn = 0; turn < 60; turn++) {
+  // QA pode ter ciclos de espera de 10 min cada → até 50 turnos
+  for (let turn = 0; turn < 50; turn++) {
+    await waitForAnthropicCapacity(redisConnection);
     const response = await anthropic.messages.create({
       model,
       max_tokens: 8192,
@@ -325,14 +345,21 @@ async function runQaAgent(
             const { branch } = block.input as { branch: string };
             const run = await getLatestWorkflowRun(branch);
             const coverageRaw = await readFile('.qa-coverage.json', branch);
-            const coverage = coverageRaw ? JSON.parse(coverageRaw) : null;
+            const coverageParsed = coverageRaw ? JSON.parse(coverageRaw) : null;
+            // Envia apenas o resumo total — dados por arquivo podem ter centenas de linhas
+            const coverage = coverageParsed?.total ? { total: coverageParsed.total } : coverageParsed;
             result = JSON.stringify({ run, coverage });
             jobLog.debug({ branch, runId: run?.runId, conclusion: run?.conclusion }, 'workflow run obtido');
 
           } else if (block.name === 'read_github_file') {
             const { file_path, branch } = block.input as { file_path: string; branch?: string };
             const content = await readFile(file_path, branch ?? devBranch);
-            result = content ?? '(arquivo não encontrado)';
+            const MAX_FILE_CHARS = 4_000;
+            if (content && content.length > MAX_FILE_CHARS) {
+              result = content.slice(0, MAX_FILE_CHARS) + `\n\n[... truncado — ${content.length - MAX_FILE_CHARS} chars omitidos para economizar tokens ...]`;
+            } else {
+              result = content ?? '(arquivo não encontrado)';
+            }
 
           } else if (block.name === 'list_github_directory') {
             const { dir_path, branch } = block.input as { dir_path: string; branch?: string };
@@ -404,35 +431,55 @@ async function runQaAgent(
               devBranch,
             );
 
-            // 2. Registra agentRun pendente para o DEV correction
-            const [corrRun] = await db
-              .insert(schema.agentRuns)
-              .values({
-                storyId,
-                agentType: 'dev',
-                status: 'pending',
-                input: { jiraKey, correctionMode: true, iteration },
-              })
-              .returning({ id: schema.agentRuns.id });
+            // 2. Deduplicação — reutiliza DEV correction já ativo para esta story
+            const activeDevRuns = await db
+              .select({ id: schema.agentRuns.id })
+              .from(schema.agentRuns)
+              .where(
+                and(
+                  eq(schema.agentRuns.storyId, storyId),
+                  eq(schema.agentRuns.agentType, 'dev'),
+                  inArray(schema.agentRuns.status, ['pending', 'running']),
+                ),
+              )
+              .limit(1);
 
-            const correctionRunId = corrRun!.id;
+            let correctionRunId: string;
 
-            // 3. Enfileira job DEV no modo correção
-            await devAgentQueue.add(
-              'dev:correction',
-              {
-                storyId,
-                jiraKey,
-                agentRunId: correctionRunId,
-                summary,
-                fromStatus: 'Em QA',
-                correctionMode: true,
-                correctionIteration: iteration,
-              },
-              { jobId: `dev-correction-${jiraKey}-${correctionRunId}` },
-            );
+            if (activeDevRuns.length > 0) {
+              correctionRunId = activeDevRuns[0]!.id;
+              jobLog.warn({ correctionRunId, iteration }, 'DEV correction já ativo — reutilizando agentRunId existente');
+            } else {
+              // 3. Registra agentRun pendente para o DEV correction
+              const [corrRun] = await db
+                .insert(schema.agentRuns)
+                .values({
+                  storyId,
+                  agentType: 'dev',
+                  status: 'pending',
+                  input: { jiraKey, correctionMode: true, iteration },
+                })
+                .returning({ id: schema.agentRuns.id });
 
-            // 4. Comenta no Jira
+              correctionRunId = corrRun!.id;
+
+              // 4. Enfileira job DEV no modo correção
+              await devAgentQueue.add(
+                'dev:correction',
+                {
+                  storyId,
+                  jiraKey,
+                  agentRunId: correctionRunId,
+                  summary,
+                  fromStatus: 'Em QA',
+                  correctionMode: true,
+                  correctionIteration: iteration,
+                },
+                { jobId: `dev-correction-${jiraKey}-${correctionRunId}` },
+              );
+            }
+
+            // 5. Comenta no Jira
             try {
               await addComment(
                 jiraKey,
@@ -523,13 +570,14 @@ async function runQaAgent(
       }
 
       messages.push({ role: 'user', content: toolResults });
+      pruneOldToolResults(messages);
       continue;
     }
 
     throw new Error(`stop_reason inesperado: ${response.stop_reason}`);
   }
 
-  throw new Error('Agente QA excedeu o limite de 60 turnos sem concluir a revisão');
+  throw new Error('Agente QA excedeu o limite de 50 turnos sem concluir a revisão');
 }
 
 // ─── Processador do job QA ────────────────────────────────────────────────────
