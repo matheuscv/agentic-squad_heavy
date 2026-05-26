@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Arquitetura de Processamento Paralelo — Squad Agêntica</title>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface2: #22263a;
+      --border: #2e3248;
+      --accent: #6c8bef;
+      --accent2: #5dd6a8;
+      --accent3: #f0a05a;
+      --danger: #e06c75;
+      --text: #cdd6f4;
+      --text-muted: #7c84a0;
+      --text-dim: #545870;
+      --radius: 10px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      font-size: 15px;
+      line-height: 1.7;
+      padding: 40px 24px 80px;
+    }
+
+    .page {
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    /* ── Header ── */
+    .page-header {
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 28px;
+      margin-bottom: 40px;
+    }
+
+    .badge {
+      display: inline-block;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--accent);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      padding: 3px 10px;
+      border-radius: 4px;
+      margin-bottom: 14px;
+    }
+
+    h1 {
+      font-size: 28px;
+      font-weight: 700;
+      color: #fff;
+      line-height: 1.25;
+      margin-bottom: 10px;
+    }
+
+    .subtitle {
+      color: var(--text-muted);
+      font-size: 14px;
+    }
+
+    .subtitle span {
+      color: var(--text-dim);
+      margin: 0 6px;
+    }
+
+    /* ── Sections ── */
+    h2 {
+      font-size: 17px;
+      font-weight: 600;
+      color: #fff;
+      margin: 40px 0 16px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    h2 .icon {
+      width: 26px;
+      height: 26px;
+      border-radius: 6px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      flex-shrink: 0;
+    }
+
+    h3 {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--accent2);
+      margin: 24px 0 8px;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+    }
+
+    p { margin-bottom: 14px; color: var(--text); }
+
+    /* ── Answer banner ── */
+    .answer-banner {
+      background: linear-gradient(135deg, #1a2e4a 0%, #1a2d3a 100%);
+      border: 1px solid #2d5a8a;
+      border-left: 4px solid var(--accent);
+      border-radius: var(--radius);
+      padding: 20px 24px;
+      margin-bottom: 32px;
+      display: flex;
+      align-items: flex-start;
+      gap: 14px;
+    }
+
+    .answer-banner .check {
+      font-size: 22px;
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+
+    .answer-banner .content strong {
+      font-size: 16px;
+      color: #fff;
+      display: block;
+      margin-bottom: 6px;
+    }
+
+    .answer-banner .content p {
+      margin: 0;
+      color: #8ab4d4;
+      font-size: 14px;
+    }
+
+    /* ── How it works cards ── */
+    .mechanism-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      margin-bottom: 24px;
+    }
+
+    @media (max-width: 640px) {
+      .mechanism-grid { grid-template-columns: 1fr; }
+    }
+
+    .mechanism-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px 20px;
+    }
+
+    .mechanism-card .num {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      margin-bottom: 6px;
+    }
+
+    .mechanism-card strong {
+      display: block;
+      color: #fff;
+      font-size: 14px;
+      margin-bottom: 8px;
+    }
+
+    .mechanism-card p {
+      color: var(--text-muted);
+      font-size: 13px;
+      margin: 0;
+      line-height: 1.6;
+    }
+
+    /* ── Concurrency table ── */
+    .concurrency-row {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px 18px;
+      margin-bottom: 10px;
+    }
+
+    .concurrency-row .worker-name {
+      font-weight: 600;
+      color: #fff;
+      font-size: 14px;
+      width: 160px;
+      flex-shrink: 0;
+    }
+
+    .concurrency-row .slots {
+      display: flex;
+      gap: 5px;
+    }
+
+    .slot {
+      width: 28px;
+      height: 28px;
+      border-radius: 5px;
+      border: 1px solid var(--border);
+      background: var(--surface2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .slot.active {
+      background: rgba(108, 139, 239, 0.2);
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .slot.active.green {
+      background: rgba(93, 214, 168, 0.15);
+      border-color: var(--accent2);
+      color: var(--accent2);
+    }
+
+    .concurrency-row .desc {
+      color: var(--text-muted);
+      font-size: 13px;
+    }
+
+    /* ── Code block ── */
+    .code-block {
+      background: #0d1117;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px 20px;
+      font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+      font-size: 13px;
+      line-height: 1.7;
+      overflow-x: auto;
+      margin: 14px 0 20px;
+    }
+
+    .code-block .comment { color: #546e7a; }
+    .code-block .keyword { color: #bb86fc; }
+    .code-block .string  { color: #a5d6a7; }
+    .code-block .number  { color: #f0a05a; }
+    .code-block .ref     { color: var(--accent); }
+    .code-block .ok      { color: var(--accent2); }
+
+    /* ── Scenario ── */
+    .scenario-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px 24px;
+      margin-bottom: 24px;
+    }
+
+    .story-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 9px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .story-row:last-child { border-bottom: none; }
+
+    .story-key {
+      font-family: monospace;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--accent);
+      background: rgba(108,139,239,.1);
+      border: 1px solid rgba(108,139,239,.3);
+      border-radius: 4px;
+      padding: 2px 7px;
+      width: 90px;
+      text-align: center;
+      flex-shrink: 0;
+    }
+
+    .story-status {
+      flex: 1;
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    .story-action {
+      font-size: 12px;
+      font-weight: 600;
+      padding: 3px 10px;
+      border-radius: 4px;
+    }
+
+    .action-running {
+      background: rgba(93,214,168,.15);
+      border: 1px solid rgba(93,214,168,.3);
+      color: var(--accent2);
+    }
+
+    .action-waiting {
+      background: rgba(240,160,90,.1);
+      border: 1px solid rgba(240,160,90,.3);
+      color: var(--accent3);
+    }
+
+    .action-gate {
+      background: rgba(108,139,239,.1);
+      border: 1px solid rgba(108,139,239,.3);
+      color: var(--accent);
+    }
+
+    .action-idle {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+    }
+
+    /* ── Limits table ── */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      margin-bottom: 24px;
+    }
+
+    th {
+      text-align: left;
+      color: var(--text-muted);
+      font-weight: 600;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      padding: 8px 14px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    td {
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+      color: var(--text);
+      vertical-align: top;
+    }
+
+    tr:last-child td { border-bottom: none; }
+
+    td:first-child { font-family: monospace; color: var(--accent); }
+
+    .tag-ok    { background: rgba(93,214,168,.12); color: var(--accent2); border: 1px solid rgba(93,214,168,.3); border-radius: 4px; padding: 2px 8px; font-size: 11px; font-weight: 600; }
+    .tag-warn  { background: rgba(240,160,90,.12); color: var(--accent3); border: 1px solid rgba(240,160,90,.3); border-radius: 4px; padding: 2px 8px; font-size: 11px; font-weight: 600; }
+    .tag-info  { background: rgba(108,139,239,.1); color: var(--accent); border: 1px solid rgba(108,139,239,.3); border-radius: 4px; padding: 2px 8px; font-size: 11px; font-weight: 600; }
+
+    /* ── Reconciler highlight ── */
+    .reconciler-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--accent3);
+      border-radius: var(--radius);
+      padding: 18px 22px;
+      margin-bottom: 24px;
+    }
+
+    .reconciler-box strong { color: #fff; }
+
+    .reconciler-box .flow {
+      margin-top: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .flow-step {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    .flow-step .step-num {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--accent3);
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+
+    /* ── Footer ── */
+    .page-footer {
+      margin-top: 56px;
+      padding-top: 20px;
+      border-top: 1px solid var(--border);
+      color: var(--text-dim);
+      font-size: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+  </style>
+</head>
+<body>
+<div class="page">
+
+  <!-- Header -->
+  <div class="page-header">
+    <div class="badge">Arquitetura Interna</div>
+    <h1>Processamento Paralelo de Histórias</h1>
+    <p class="subtitle">
+      Squad Agêntica — agentic-squad-heavy
+      <span>·</span>
+      Fase 2
+      <span>·</span>
+      2026-05-25
+    </p>
+  </div>
+
+  <!-- Resposta direta -->
+  <div class="answer-banner">
+    <div class="check">✅</div>
+    <div class="content">
+      <strong>Sim — o sistema suporta múltiplas histórias em paralelo, por design.</strong>
+      <p>Duas ou mais histórias em statuses distintos (ou no mesmo status) são processadas de forma completamente independente.
+         Não há estado compartilhado, locks globais ou dependências entre histórias diferentes.</p>
+    </div>
+  </div>
+
+  <!-- Como funciona -->
+  <h2><span class="icon">⚙</span> Como funciona a independência entre histórias</h2>
+
+  <div class="mechanism-grid">
+    <div class="mechanism-card">
+      <div class="num">Mecanismo 1</div>
+      <strong>Webhook — caminho principal</strong>
+      <p>Cada evento Jira dispara um job independente no <code>orchestrator</code> queue com
+         <code>jobId</code> único por história e status. Histórias diferentes não compartilham
+         jobs nem contexto de execução.</p>
+    </div>
+    <div class="mechanism-card">
+      <div class="num">Mecanismo 2</div>
+      <strong>BullMQ com concorrência configurada</strong>
+      <p>Cada worker aceita múltiplos jobs simultâneos. Jobs de histórias diferentes
+         executam em paralelo dentro do mesmo processo Node.js, sem bloqueio entre si.</p>
+    </div>
+    <div class="mechanism-card">
+      <div class="num">Mecanismo 3</div>
+      <strong>Reconciler divergence-driven</strong>
+      <p>O reconciler (90s) só re-dispara jobs quando detecta que o Jira avançou além do banco.
+         Enquanto um agente está rodando, Jira e DB estão no mesmo status — o reconciler
+         passa direto sem duplicar trabalho.</p>
+    </div>
+    <div class="mechanism-card">
+      <div class="num">Mecanismo 4</div>
+      <strong>Isolamento completo por história</strong>
+      <p>Cada história possui seus próprios registros em <code>stories</code>,
+         <code>agent_runs</code> e <code>artifacts</code>. Não há tabelas ou variáveis
+         globais compartilhadas entre histórias distintas.</p>
+    </div>
+  </div>
+
+  <!-- Concorrência dos workers -->
+  <h2><span class="icon">⚡</span> Concorrência configurada nos workers</h2>
+
+  <div class="concurrency-row">
+    <div class="worker-name">Orchestrator</div>
+    <div class="slots">
+      <div class="slot active">1</div>
+      <div class="slot active">2</div>
+      <div class="slot active">3</div>
+      <div class="slot active">4</div>
+      <div class="slot active">5</div>
+    </div>
+    <div class="desc">Até <strong>5 transições</strong> de histórias processadas simultaneamente</div>
+  </div>
+
+  <div class="concurrency-row">
+    <div class="worker-name">Agente PO</div>
+    <div class="slots">
+      <div class="slot active green">1</div>
+      <div class="slot active green">2</div>
+      <div class="slot active green">3</div>
+    </div>
+    <div class="desc">Até <strong>3 PRDs</strong> sendo gerados em paralelo via Claude API</div>
+  </div>
+
+  <div class="concurrency-row">
+    <div class="worker-name">Agente LT</div>
+    <div class="slots">
+      <div class="slot active green">1</div>
+      <div class="slot active green">2</div>
+      <div class="slot active green">3</div>
+    </div>
+    <div class="desc">Até <strong>3 Planos de Execução</strong> sendo gerados em paralelo via Claude API</div>
+  </div>
+
+  <p style="color:var(--text-muted);font-size:13px;margin-top:6px;">
+    Jobs além do limite de concorrência entram na fila BullMQ e são processados assim que um slot libera.
+    A ordem é garantida — nenhum job é descartado.
+  </p>
+
+  <!-- Reconciler -->
+  <h2><span class="icon">🔄</span> Por que o Reconciler não duplica trabalho</h2>
+
+  <div class="reconciler-box">
+    <strong>Lógica de divergência — trecho de <code>reconciler.ts:84</code></strong>
+    <div class="flow">
+      <div class="flow-step">
+        <div class="step-num">1</div>
+        <span>Busca no banco todas as histórias com status <em>em andamento</em></span>
+      </div>
+      <div class="flow-step">
+        <div class="step-num">2</div>
+        <span>Consulta o estado real de cada história no Jira via API</span>
+      </div>
+      <div class="flow-step">
+        <div class="step-num">3</div>
+        <span><code>if (jiraCurrentStatus === story.jiraStatus) continue;</code>
+          — se Jira == banco, não faz nada (agente em execução, tudo certo)</span>
+      </div>
+      <div class="flow-step">
+        <div class="step-num">4</div>
+        <span>Só reenfileira se o Jira estiver <strong>à frente</strong> do banco
+          (<code>jiraOrder &gt; dbOrder</code>) — sinal de webhook perdido</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="code-block">
+<span class="comment">// reconciler.ts — verificação de divergência por história</span>
+<span class="keyword">for</span> (<span class="keyword">const</span> story <span class="keyword">of</span> dbStories) {
+  <span class="keyword">const</span> jiraCurrentStatus = jiraIssue.fields.status.name;
+
+  <span class="comment">// ← agente em execução: Jira == banco → não faz nada</span>
+  <span class="keyword">if</span> (jiraCurrentStatus === story.jiraStatus) <span class="keyword">continue</span>;
+
+  <span class="keyword">if</span> (jiraOrder > dbOrder) {
+    <span class="comment">// webhook perdido → reenfileira com jobId deduplicado</span>
+    <span class="keyword">await</span> orchestratorQueue.add(<span class="string">'jira:transition'</span>, { ... }, {
+      jobId: <span class="string">`reconcile-<span class="ref">${story.jiraKey}</span>-<span class="ref">${JIRA_TO_DB_STATUS[jiraCurrentStatus]}</span>`</span>,
+    });
+  }
+}
+  </div>
+
+  <!-- Cenário real -->
+  <h2><span class="icon">🗂</span> Cenário real com múltiplas histórias simultâneas</h2>
+
+  <div class="scenario-box">
+    <div class="story-row">
+      <div class="story-key">SCRUM-10</div>
+      <div class="story-status">Em Refinamento → Agente PO gerando PRD.md</div>
+      <div class="story-action action-running">PO rodando</div>
+    </div>
+    <div class="story-row">
+      <div class="story-key">SCRUM-11</div>
+      <div class="story-status">PRD Aceito → Agente LT gerando PLANO_DE_EXECUCAO.md</div>
+      <div class="story-action action-running">LT rodando</div>
+    </div>
+    <div class="story-row">
+      <div class="story-key">SCRUM-12</div>
+      <div class="story-status">Em Refinamento → na fila BullMQ (slots PO ocupados)</div>
+      <div class="story-action action-waiting">Aguardando slot</div>
+    </div>
+    <div class="story-row">
+      <div class="story-key">SCRUM-13</div>
+      <div class="story-status">Aguardando Aceite PRD → gate humano ativo</div>
+      <div class="story-action action-gate">Gate humano</div>
+    </div>
+    <div class="story-row">
+      <div class="story-key">SCRUM-14</div>
+      <div class="story-status">Backlog → fora do radar do sistema</div>
+      <div class="story-action action-idle">Inativo</div>
+    </div>
+  </div>
+
+  <p>Todos os jobs acima coexistem no mesmo processo Node.js sem interferir uns nos outros.
+     O BullMQ gerencia a fila de espera automaticamente — SCRUM-12 inicia assim que um dos
+     slots do Agente PO liberar.</p>
+
+  <!-- Limites práticos -->
+  <h2><span class="icon">⚠</span> Limites práticos a considerar</h2>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Limite</th>
+        <th>Valor atual</th>
+        <th>Impacto</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Concorrência PO</td>
+        <td>3 histórias simultâneas</td>
+        <td>A 4ª história em "Em Refinamento" entra na fila BullMQ e aguarda um slot liberar</td>
+        <td><span class="tag-ok">OK para testes</span></td>
+      </tr>
+      <tr>
+        <td>Concorrência LT</td>
+        <td>3 histórias simultâneas</td>
+        <td>Idem para o Agente LT</td>
+        <td><span class="tag-ok">OK para testes</span></td>
+      </tr>
+      <tr>
+        <td>Rate limit Anthropic</td>
+        <td>~50 req/min (Tier 1)</td>
+        <td>Muitas histórias simultâneas consumindo Claude API podem sofrer throttling — a fila BullMQ absorve picos naturalmente via retentativas com backoff exponencial</td>
+        <td><span class="tag-warn">Monitorar</span></td>
+      </tr>
+      <tr>
+        <td>Render free tier</td>
+        <td>1 instância</td>
+        <td>Não há escalonamento horizontal — os 3 slots de cada worker rodam no mesmo processo; suficiente para o volume atual de desenvolvimento</td>
+        <td><span class="tag-info">Planejado</span></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- Ajuste de escala -->
+  <h3>Como escalar quando necessário</h3>
+  <p>
+    Se o squad crescer para 10+ histórias simultâneas, o único ajuste necessário é aumentar
+    os valores de <code>concurrency</code> nos workers:
+  </p>
+
+  <div class="code-block">
+<span class="comment">// src/agents/po.ts — ajuste de concorrência</span>
+<span class="keyword">new</span> <span class="ref">Worker</span>(<span class="string">'agent-po'</span>, processPoJob, {
+  connection: redisConnection,
+  concurrency: <span class="number">10</span>, <span class="comment">// era 3 — aumentar conforme demanda</span>
+});
+
+<span class="comment">// src/index.ts — orquestrador</span>
+<span class="keyword">new</span> <span class="ref">Worker</span>(<span class="string">'orchestrator'</span>, processJob, {
+  connection: redisConnection,
+  concurrency: <span class="number">20</span>, <span class="comment">// era 5</span>
+});
+  </div>
+
+  <p>
+    O Redis (Upstash) e o PostgreSQL (Supabase) não precisam de nenhuma mudança —
+    já suportam múltiplas conexões concorrentes. O gargalo para cargas maiores seria
+    o plano do Render (uma instância), resolvido com upgrade para um plano com múltiplas
+    instâncias e balanceamento de carga via Redis como broker compartilhado.
+  </p>
+
+  <!-- Footer -->
+  <div class="page-footer">
+    <span>Squad Agêntica — agentic-squad-heavy</span>
+    <span>Gerado em 2026-05-25</span>
+  </div>
+
+</div>
+</body>
+</html>

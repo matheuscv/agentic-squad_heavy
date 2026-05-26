@@ -1,0 +1,1067 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Validação Ponta a Ponta — Fases 1, 2 e 3 | Squad Agêntica</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0f1117;
+      color: #e2e8f0;
+      line-height: 1.65;
+      padding: 2rem;
+    }
+
+    .container { max-width: 920px; margin: 0 auto; }
+
+    /* ── Header ─────────────────────────────────────────────────────────── */
+    header {
+      border-bottom: 2px solid #2d3748;
+      padding-bottom: 1.5rem;
+      margin-bottom: 2rem;
+    }
+    header h1 { font-size: 1.85rem; color: #63b3ed; letter-spacing: -0.5px; }
+    header p  { color: #718096; margin-top: 0.4rem; font-size: 0.95rem; }
+    .badges   { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.75rem; }
+    .badge {
+      display: inline-block;
+      padding: 0.2rem 0.65rem;
+      border-radius: 9999px;
+      font-size: 0.78rem;
+      font-weight: 600;
+    }
+    .badge-phase { background:#1a365d; color:#90cdf4; border:1px solid #2b6cb0; }
+    .badge-ok    { background:#1a472a; color:#68d391; border:1px solid #2f855a; }
+    .badge-tests { background:#2d1a5e; color:#b794f4; border:1px solid #553c9a; }
+
+    /* ── Info / Warning boxes ───────────────────────────────────────────── */
+    .box {
+      border-radius: 6px;
+      padding: 1rem 1.25rem;
+      margin-bottom: 1.5rem;
+    }
+    .box-info    { background:#0d2137; border:1px solid #2b6cb0; border-left:4px solid #63b3ed; }
+    .box-warn    { background:#2d1a00; border:1px solid #c05621; border-left:4px solid #ed8936; }
+    .box-success { background:#0d2718; border:1px solid #2f855a; border-left:4px solid #68d391; }
+    .box strong  { display:block; margin-bottom:0.4rem; font-size:0.95rem; }
+    .box-info  strong { color:#90cdf4; }
+    .box-warn  strong { color:#ed8936; }
+    .box-success strong { color:#68d391; }
+    .box p, .box li { color:#cbd5e0; font-size:0.9rem; }
+    .box ul { padding-left:1.2rem; margin-top:0.4rem; }
+    .box li { margin-top:0.3rem; }
+
+    /* ── Section title ──────────────────────────────────────────────────── */
+    .section-title {
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: #4a5568;
+      margin: 2.5rem 0 0.85rem;
+    }
+
+    /* ── Phase header ───────────────────────────────────────────────────── */
+    .phase-header {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      background: #171923;
+      border: 1px solid #2d3748;
+      border-radius: 10px;
+      padding: 1rem 1.4rem;
+      margin-bottom: 1rem;
+    }
+    .phase-icon {
+      width: 3rem;
+      height: 3rem;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.3rem;
+      flex-shrink: 0;
+    }
+    .phase-icon-1 { background:#1a365d; }
+    .phase-icon-2 { background:#1a2e1a; }
+    .phase-icon-3 { background:#2d1a5e; }
+    .phase-header h2  { font-size: 1.15rem; color: #e2e8f0; }
+    .phase-header p   { font-size: 0.88rem; color: #718096; margin-top: 0.2rem; }
+
+    /* ── Steps ──────────────────────────────────────────────────────────── */
+    .step {
+      background: #1a202c;
+      border: 1px solid #2d3748;
+      border-radius: 8px;
+      padding: 1.25rem 1.5rem;
+      margin-bottom: 1rem;
+    }
+    .step-header {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 0.85rem;
+    }
+    .step-num {
+      background: #2b6cb0;
+      color: #ebf8ff;
+      width: 2rem;
+      height: 2rem;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 0.9rem;
+      flex-shrink: 0;
+    }
+    .step-num-gate { background:#744210; color:#fefcbf; }
+    .step-num-auto { background:#276749; color:#c6f6d5; }
+    .step h3 { font-size: 1rem; color: #90cdf4; }
+    .step h3.gate-title  { color: #f6ad55; }
+    .step h3.auto-title  { color: #68d391; }
+    .step p, .step li { color: #cbd5e0; font-size: 0.91rem; }
+    .step ol, .step ul { padding-left: 1.3rem; margin-top: 0.5rem; }
+    .step li { margin-top: 0.4rem; }
+
+    /* ── Flow diagram ───────────────────────────────────────────────────── */
+    .flow {
+      background: #171923;
+      border: 1px solid #2d3748;
+      border-radius: 6px;
+      padding: 1rem 1.4rem;
+      font-family: 'Fira Code', 'Cascadia Code', monospace;
+      font-size: 0.85rem;
+      color: #a0aec0;
+      margin: 0.9rem 0;
+      line-height: 2.1;
+      overflow-x: auto;
+    }
+    .flow .auto    { color: #63b3ed; }
+    .flow .human   { color: #f6ad55; }
+    .flow .gate    { color: #f6ad55; font-weight: 600; }
+    .flow .agent   { color: #68d391; }
+    .flow .stop    { color: #fc8181; font-weight: 600; }
+    .flow .dim     { color: #4a5568; font-size: 0.82rem; }
+
+    /* ── Tables ─────────────────────────────────────────────────────────── */
+    table { width:100%; border-collapse:collapse; font-size:0.89rem; margin-top:0.75rem; }
+    th {
+      background: #2d3748;
+      color: #a0aec0;
+      text-align: left;
+      padding: 0.6rem 0.85rem;
+      font-weight: 600;
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    td {
+      padding: 0.65rem 0.85rem;
+      border-bottom: 1px solid #2d3748;
+      color: #cbd5e0;
+      vertical-align: top;
+    }
+    tr:last-child td { border-bottom: none; }
+    .ok   { color: #68d391; font-weight: 600; }
+    .warn { color: #f6ad55; }
+    .err  { color: #fc8181; }
+
+    /* ── Checklists ──────────────────────────────────────────────────────── */
+    .checklist { list-style: none; padding: 0; margin-top: 0.75rem; }
+    .checklist li {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.65rem;
+      padding: 0.5rem 0;
+      border-bottom: 1px solid #2d3748;
+      font-size: 0.9rem;
+      color: #cbd5e0;
+    }
+    .checklist li:last-child { border-bottom: none; }
+    .checklist li::before {
+      content: '☐';
+      color: #4a5568;
+      font-size: 1.1rem;
+      line-height: 1.2;
+      flex-shrink: 0;
+    }
+
+    /* ── Code ────────────────────────────────────────────────────────────── */
+    code {
+      background: #2d3748;
+      color: #f6e05e;
+      padding: 0.1em 0.4em;
+      border-radius: 3px;
+      font-family: 'Fira Code', 'Cascadia Code', monospace;
+      font-size: 0.85em;
+    }
+    pre {
+      background: #171923;
+      border: 1px solid #2d3748;
+      border-radius: 6px;
+      padding: 0.85rem 1.1rem;
+      overflow-x: auto;
+      font-family: 'Fira Code', 'Cascadia Code', monospace;
+      font-size: 0.84rem;
+      color: #e2e8f0;
+      margin: 0.75rem 0;
+      line-height: 1.7;
+    }
+    pre .c { color: #4a5568; }
+    pre .k { color: #63b3ed; }
+    pre .s { color: #68d391; }
+    pre .v { color: #f6e05e; }
+
+    /* ── Label pairs ─────────────────────────────────────────────────────── */
+    .kv { display:flex; gap:0.5rem; align-items:baseline; margin-top:0.45rem; font-size:0.89rem; }
+    .kv .k { color:#718096; min-width:130px; flex-shrink:0; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.04em; }
+    .kv .v { color:#e2e8f0; }
+
+    /* ── Divider ─────────────────────────────────────────────────────────── */
+    .divider { border:none; border-top:1px solid #2d3748; margin:2.5rem 0; }
+
+    /* ── Footer ──────────────────────────────────────────────────────────── */
+    footer {
+      margin-top: 3rem;
+      padding-top: 1.2rem;
+      border-top: 1px solid #2d3748;
+      color: #4a5568;
+      font-size: 0.8rem;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       HEADER
+  ══════════════════════════════════════════════════════════════════════ -->
+  <header>
+    <h1>Validação Ponta a Ponta — Squad Agêntica</h1>
+    <p>Roteiro completo: criação de história no Jira até aprovação do QA</p>
+    <div class="badges">
+      <span class="badge badge-phase">Fase 1 — Orquestrador + Webhook</span>
+      <span class="badge badge-phase">Fase 2 — Agentes PO e LT</span>
+      <span class="badge badge-phase">Fase 3 — Agentes DEV e QA</span>
+      <span class="badge badge-ok">59 testes automatizados passando</span>
+      <span class="badge badge-tests">lint ✓  build ✓  tsc ✓</span>
+    </div>
+  </header>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       O QUE VOCÊ VAI TESTAR
+  ══════════════════════════════════════════════════════════════════════ -->
+  <p class="section-title">O que você vai testar</p>
+
+  <div class="box box-info">
+    <strong>Objetivo desta sessão de testes</strong>
+    <p>Validar o ciclo completo de desenvolvimento agêntico: uma história criada no Jira atravessa
+    automaticamente os 13 estados do board — passando por agentes de IA (PO, LT, DEV, QA) e pelos
+    5 gates de aprovação humana — até ser marcada como Concluída.</p>
+    <ul>
+      <li><strong>Fase 1:</strong> webhook recebe a transição do Jira, orquestrador executa a máquina de estados, PO gera o PRD.md</li>
+      <li><strong>Fase 2:</strong> LT lê o PRD e gera o PLANO_DE_EXECUCAO.md com tasks técnicas numeradas</li>
+      <li><strong>Fase 3:</strong> DEV lê o plano, implementa o código + testes, cria o PR; QA valida cobertura ≥ 85% e executa loop de correção se necessário</li>
+    </ul>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       FLUXO COMPLETO DOS 13 ESTADOS
+  ══════════════════════════════════════════════════════════════════════ -->
+  <p class="section-title">Fluxo dos 13 estados (visão geral)</p>
+
+  <div class="flow">
+<span class="human">Backlog</span>                          <span class="dim">← história criada aqui</span>
+  └─ <span class="human">[você]</span> move para →
+<span class="human">A Refinar</span>                        <span class="dim">← dispara webhook → orquestrador</span>
+  └─ <span class="auto">[auto]</span> moveCardTo →
+<span class="auto">Em Refinamento</span>                   <span class="dim">← Agente PO trabalhando</span>
+  └─ <span class="agent">[PO]</span> gera PRD.md →
+<span class="gate">Aguardando Aceite PRD</span>            <span class="dim">← GATE 1: você revisa PRD.md no GitHub</span>
+  └─ <span class="human">[você]</span> aprova →
+<span class="human">PRD Aceito</span>                       <span class="dim">← dispara Agente LT</span>
+  └─ <span class="agent">[LT]</span> gera PLANO_DE_EXECUCAO.md →
+<span class="gate">Aguardando Aceite Plano</span>          <span class="dim">← GATE 2: você revisa o plano</span>
+  └─ <span class="human">[você]</span> aprova →
+<span class="human">Plano Validado</span>                   <span class="dim">← dispara Agente DEV</span>
+  └─ <span class="auto">[auto]</span> moveCardTo →
+<span class="auto">Em Desenvolvimento</span>               <span class="dim">← DEV implementando código + testes</span>
+  └─ <span class="agent">[DEV]</span> cria PR →
+<span class="gate">Aguardando Aceite Dev</span>            <span class="dim">← GATE 3: você revisa o PR no GitHub</span>
+  └─ <span class="human">[você]</span> aprova →
+<span class="human">Em QA</span>                            <span class="dim">← dispara Agente QA</span>
+  └─ <span class="agent">[QA]</span> valida CI + cobertura ≥ 85% →
+<span class="gate">Aguardando Aceite QA</span>            <span class="dim">← GATE 4: você revisa relatório de cobertura</span>
+  └─ <span class="human">[você]</span> aprova →
+<span class="gate">Validação Final</span>                  <span class="dim">← GATE 5: validação end-to-end</span>
+  └─ <span class="human">[você]</span> confirma →
+<span class="human">Concluído</span>                        <span class="dim">← estado terminal</span>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       PRÉ-REQUISITOS
+  ══════════════════════════════════════════════════════════════════════ -->
+  <p class="section-title">Pré-requisitos antes de começar</p>
+
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">✓</div>
+      <h3>Verificar infra e configurações</h3>
+    </div>
+    <p>Execute as verificações abaixo antes de criar a história:</p>
+    <ul class="checklist">
+      <li>
+        <strong>Serviço no Render respondendo:</strong>
+        acesse <code>https://&lt;sua-app&gt;.onrender.com/health</code> e confirme
+        <code>{ "status": "ok", "checks": { "database": "ok", "redis": "ok" } }</code>
+      </li>
+      <li>
+        <strong>Webhook do Jira configurado:</strong>
+        Jira → Configurações → Sistema → Webhooks → o webhook aponta para
+        <code>https://&lt;sua-app&gt;.onrender.com/webhooks/jira</code>
+        com evento <em>Issue updated (status)</em> ativo
+      </li>
+      <li>
+        <strong>GitHub App instalado no repositório</strong> com permissões:
+        Contents: R&W · Pull requests: R&W · Actions: Read · Checks: Read
+      </li>
+      <li>
+        <strong>GitHub Actions habilitado</strong> no repositório —
+        arquivo <code>.github/workflows/agent-dev.yml</code> presente no branch master
+      </li>
+      <li>
+        <strong>Branch protection em <code>master</code></strong> (opcional mas recomendado):
+        Status check obrigatório = <code>Lint · Typecheck · Build · Test · Coverage</code>
+      </li>
+      <li>
+        <strong>Variáveis de ambiente no Render</strong> todas preenchidas:
+        <code>ANTHROPIC_API_KEY</code>, <code>JIRA_BASE_URL</code>, <code>JIRA_EMAIL</code>,
+        <code>JIRA_API_TOKEN</code>, <code>JIRA_PROJECT_KEY</code>,
+        <code>GITHUB_APP_ID</code>, <code>GITHUB_APP_PRIVATE_KEY</code>,
+        <code>GITHUB_APP_INSTALLATION_ID</code>, <code>GITHUB_OWNER</code>,
+        <code>GITHUB_REPO</code>, <code>DATABASE_URL</code>, <code>REDIS_URL</code>
+      </li>
+    </ul>
+  </div>
+
+  <div class="box box-warn">
+    <strong>⚠️ História de teste recomendada (baixa complexidade)</strong>
+    <p>Para o primeiro teste use uma história simples e bem definida — o agente DEV
+    implementará melhor quando a task tiver escopo claro.</p>
+    <p style="margin-top:0.5rem">
+      <strong>Título sugerido:</strong>
+      <em>"Adicionar função utilitária formatCurrency(value, currency) ao módulo src/utils/currency.ts"</em>
+    </p>
+    <p style="margin-top:0.4rem">
+      Histórias ambíguas ou de alto escopo aumentam o risco de o agente DEV precisar de
+      mais iterações do loop de correção QA.
+    </p>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       FASE 1 — ORQUESTRADOR + WEBHOOK
+  ══════════════════════════════════════════════════════════════════════ -->
+  <hr class="divider" />
+
+  <div class="phase-header">
+    <div class="phase-icon phase-icon-1">🔀</div>
+    <div>
+      <h2>Fase 1 — Orquestrador + Webhook Jira</h2>
+      <p>O que é testado: recebimento do webhook, máquina de estados, despacho do PO, reconciliação.</p>
+    </div>
+  </div>
+
+  <!-- STEP 1 -->
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">1</div>
+      <h3>Criar a história no Jira — estado inicial: <strong>Backlog</strong></h3>
+    </div>
+    <ol>
+      <li>Acesse o board do projeto Jira (ex: <code>matheuscv.atlassian.net</code>)</li>
+      <li>Crie um novo Issue do tipo <strong>Story</strong> com um título claro e objetivo</li>
+      <li>Confirme que o card aparece na coluna <strong>Backlog</strong></li>
+      <li>Anote o <strong>Jira Key</strong> gerado (ex: <code>SCRUM-55</code>) — você precisará dele para acompanhar os logs</li>
+    </ol>
+    <div class="kv"><span class="k">Estado esperado</span><span class="v">Card em Backlog. Nenhuma ação automática ocorre.</span></div>
+    <div class="kv"><span class="k">O que NÃO deve acontecer</span><span class="v">Nenhum webhook é disparado por criar o card — somente mudanças de status disparam.</span></div>
+  </div>
+
+  <!-- STEP 2 -->
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">2</div>
+      <h3>Disparar o fluxo: mover <strong>Backlog → A Refinar</strong></h3>
+    </div>
+    <p>No board do Jira, arraste o card (ou use o dropdown de status) para a coluna <strong>A Refinar</strong>.</p>
+    <p style="margin-top:0.6rem; color:#718096; font-size:0.85rem;">
+      Esta transição dispara o webhook para o serviço. O orquestrador enfileira o job no BullMQ e processa a
+      máquina de estados.
+    </p>
+    <div class="flow">
+<span class="human">Backlog</span> → <span class="human">[você]</span> → <span class="human">A Refinar</span>
+  └─ webhook POST /webhooks/jira
+      └─ <span class="auto">orquestrador.handleTransition("A Refinar")</span>
+          └─ action: invoke_agent(po), moveTo: "Em Refinamento"
+              ├─ <span class="auto">moveCardTo(jiraKey, "Em Refinamento")</span>
+              └─ <span class="auto">poAgentQueue.add("po:run", ...)</span>
+    </div>
+    <p style="margin-top:0.75rem"><strong>Onde validar:</strong></p>
+    <ul class="checklist">
+      <li>
+        <strong>Logs do Render</strong> (em segundos após mover o card):
+        <br>filtrar por <code>SCRUM-XX</code> e procurar
+        <code>"processando transição"</code>, <code>"ação determinada"</code>,
+        <code>"job enfileirado para agente PO"</code>
+      </li>
+      <li>
+        <strong>Jira board:</strong> card deve mover automaticamente para <strong>Em Refinamento</strong>
+        dentro de ~5–10 segundos
+      </li>
+      <li>
+        <strong>Se o card NÃO mover:</strong> o webhook pode não ter chegado — verifique em
+        Jira → Webhooks → clique no webhook → aba <em>Recent Deliveries</em>
+      </li>
+    </ul>
+  </div>
+
+  <!-- STEP 3 -->
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num step-num-auto">▶</div>
+      <h3 class="auto-title">Agente PO gera o PRD.md — automático (~1–3 min)</h3>
+    </div>
+    <p>O Agente PO recebe o job, chama a API do Claude e gera o PRD.md com:</p>
+    <ul>
+      <li>Contexto e problema</li>
+      <li>Requisitos funcionais numerados (RF-01, RF-02, …)</li>
+      <li>Critérios de aceite mensuráveis</li>
+      <li>Escopo e fora-de-escopo</li>
+      <li>Riscos identificados</li>
+    </ul>
+    <p style="margin-top:0.6rem">O arquivo é commitado no GitHub e o card movido para <strong>Aguardando Aceite PRD</strong>.</p>
+    <table>
+      <thead><tr><th>O quê verificar</th><th>Onde</th><th>Esperado</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>Card no board</td>
+          <td>Jira board</td>
+          <td class="ok">Aguardando Aceite PRD</td>
+        </tr>
+        <tr>
+          <td>PRD.md commitado</td>
+          <td>GitHub → branch <code>prd/scrum-XX</code> → arquivo <code>SCRUM-XX/PRD.md</code></td>
+          <td class="ok">Arquivo presente com seções estruturadas</td>
+        </tr>
+        <tr>
+          <td>Comentário no Jira</td>
+          <td>Card → aba Comments</td>
+          <td class="ok">"🤖 Agente PO concluiu o PRD" com link para o arquivo</td>
+        </tr>
+        <tr>
+          <td>Logs</td>
+          <td>Render → Logs</td>
+          <td class="ok"><code>"agente PO concluído"</code> com <code>durationMs</code></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- GATE 1 -->
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num step-num-gate">G1</div>
+      <h3 class="gate-title">Gate 1/5 — Revisão humana do PRD.md</h3>
+    </div>
+    <p>Neste ponto o fluxo <strong>para e aguarda você</strong>. O orquestrador não avança sem ação humana.</p>
+    <ol>
+      <li>Abra o GitHub → branch <code>prd/scrum-XX</code> → leia o <code>SCRUM-XX/PRD.md</code></li>
+      <li>Verifique: mínimo 5 requisitos funcionais, critérios mensuráveis, seção de riscos</li>
+      <li>Se aprovado: mova o card Jira de <strong>Aguardando Aceite PRD → PRD Aceito</strong></li>
+      <li>Se não aprovado: adicione um comentário no card explicando o que deve ser refeito
+          (o sistema não tem retrabalho automático nesta fase — ajuste o prompt em <code>src/agents/prompts/po-system-prompt.ts</code>)</li>
+    </ol>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       FASE 2 — AGENTES PO E LT
+  ══════════════════════════════════════════════════════════════════════ -->
+  <hr class="divider" />
+
+  <div class="phase-header">
+    <div class="phase-icon phase-icon-2">📋</div>
+    <div>
+      <h2>Fase 2 — Agentes PO e LT (Artefatos Reais)</h2>
+      <p>O que é testado: geração do PLANO_DE_EXECUCAO.md com tasks técnicas decompostas e paralelizáveis.</p>
+    </div>
+  </div>
+
+  <!-- STEP 4 -->
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">4</div>
+      <h3>PRD Aceito dispara o Agente LT — automático</h3>
+    </div>
+    <p>Ao mover para <strong>PRD Aceito</strong>, o orquestrador despacha o Agente LT sem mover o card
+    (não há estado intermediário de "em refinamento técnico").</p>
+    <div class="flow">
+<span class="human">PRD Aceito</span>  <span class="dim">← você moveu</span>
+  └─ <span class="auto">orquestrador.handleTransition("PRD Aceito")</span>
+      └─ action: invoke_agent(lt)  <span class="dim">← sem moveTo</span>
+          └─ <span class="auto">ltAgentQueue.add("lt:run", ...)</span>
+    </div>
+    <p style="margin-top:0.6rem">O Agente LT lê o <code>PRD.md</code>, analisa o README e o <code>package.json</code> para
+    detectar a stack existente, e gera o <code>PLANO_DE_EXECUCAO.md</code> com:</p>
+    <ul>
+      <li>Tasks técnicas numeradas (TASK-01, TASK-02, …)</li>
+      <li>Cada task: descrição, arquivos afetados, critério de aceite técnico</li>
+      <li>Identificação de tasks paralelizáveis vs. sequenciais</li>
+      <li>Ondas de Execução (quais tasks rodar em cada onda)</li>
+    </ul>
+    <table>
+      <thead><tr><th>O quê verificar</th><th>Onde</th><th>Esperado</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>Card no board</td>
+          <td>Jira board</td>
+          <td class="ok">Aguardando Aceite Plano</td>
+        </tr>
+        <tr>
+          <td>PLANO_DE_EXECUCAO.md</td>
+          <td>GitHub → branch <code>prd/scrum-XX</code></td>
+          <td class="ok">Arquivo com tasks numeradas e ondas de execução</td>
+        </tr>
+        <tr>
+          <td>Comentário no Jira</td>
+          <td>Card → Comments</td>
+          <td class="ok">"🤖 Agente LT concluiu o plano" com link</td>
+        </tr>
+        <tr>
+          <td>Mínimo de tasks</td>
+          <td>Conteúdo do PLANO</td>
+          <td class="ok">Ao menos 2 tasks, pelo menos 1 identificada como paralelizável</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- GATE 2 -->
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num step-num-gate">G2</div>
+      <h3 class="gate-title">Gate 2/5 — Revisão humana do PLANO_DE_EXECUCAO.md</h3>
+    </div>
+    <ol>
+      <li>Abra o GitHub → branch <code>prd/scrum-XX</code> → leia o <code>PLANO_DE_EXECUCAO.md</code></li>
+      <li>Verifique: tasks com critérios técnicos claros, ondas de execução definidas</li>
+      <li>Se aprovado: mova o card de <strong>Aguardando Aceite Plano → Plano Validado</strong></li>
+      <li>Este gate é crítico — o DEV agent vai implementar exatamente o que estiver neste arquivo</li>
+    </ol>
+    <div class="box box-info" style="margin-top:0.85rem">
+      <strong>Dica: ajuste o plano antes de aprovar</strong>
+      <p>Se o plano estiver correto mas mal estruturado, você pode editar o <code>PLANO_DE_EXECUCAO.md</code>
+      diretamente no GitHub antes de aprovar o gate. O DEV agent lê o arquivo no momento da execução.</p>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       FASE 3 — AGENTES DEV E QA
+  ══════════════════════════════════════════════════════════════════════ -->
+  <hr class="divider" />
+
+  <div class="phase-header">
+    <div class="phase-icon phase-icon-3">⚙️</div>
+    <div>
+      <h2>Fase 3 — Agentes DEV e QA via CI</h2>
+      <p>O que é testado: implementação de código, criação de PR, CI, cobertura ≥ 85% e loop de correção.</p>
+    </div>
+  </div>
+
+  <!-- STEP 5 -->
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">5</div>
+      <h3>Plano Validado dispara o Agente DEV — automático (~5–15 min)</h3>
+    </div>
+    <p>Ao mover para <strong>Plano Validado</strong>, o orquestrador move imediatamente o card para
+    <strong>Em Desenvolvimento</strong> e despacha o Agente DEV.</p>
+    <div class="flow">
+<span class="human">Plano Validado</span>  <span class="dim">← você moveu</span>
+  └─ <span class="auto">orquestrador.handleTransition("Plano Validado")</span>
+      └─ action: invoke_agent(dev), moveTo: "Em Desenvolvimento"
+          ├─ <span class="auto">moveCardTo(jiraKey, "Em Desenvolvimento")</span>
+          └─ <span class="auto">devAgentQueue.add("dev:run", ...)</span>
+    </div>
+    <p style="margin-top:0.6rem">O Agente DEV executa o loop de tool-use com Claude:</p>
+    <ol>
+      <li>Lê <code>PLANO_DE_EXECUCAO.md</code> no branch <code>prd/scrum-XX</code></li>
+      <li>Lê <code>README.md</code>, <code>package.json</code> e <code>src/db/schema.ts</code> para entender o contexto</li>
+      <li>Para cada task nas Ondas de Execução: escreve os arquivos de implementação + testes</li>
+      <li>Cria commits atômicos no branch <code>agent/task-scrum-XX</code></li>
+      <li>Cria o Pull Request com título <code>[SCRUM-XX] descrição</code></li>
+      <li>Move o card para <strong>Aguardando Aceite Dev</strong> e comenta o link do PR no Jira</li>
+    </ol>
+    <table>
+      <thead><tr><th>O quê verificar</th><th>Onde</th><th>Esperado</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>Card no board</td>
+          <td>Jira board</td>
+          <td class="ok">Aguardando Aceite Dev</td>
+        </tr>
+        <tr>
+          <td>Branch criado</td>
+          <td>GitHub → Branches</td>
+          <td class="ok"><code>agent/task-scrum-XX</code> presente</td>
+        </tr>
+        <tr>
+          <td>Pull Request</td>
+          <td>GitHub → Pull Requests</td>
+          <td class="ok">PR aberto com título <code>[SCRUM-XX] ...</code> e body estruturado</td>
+        </tr>
+        <tr>
+          <td>Commits atômicos</td>
+          <td>GitHub → PR → Commits</td>
+          <td class="ok">Mensagens no formato <code>feat(TASK-01): ...</code></td>
+        </tr>
+        <tr>
+          <td>Comentário no Jira</td>
+          <td>Card → Comments</td>
+          <td class="ok">"🤖 Agente DEV concluiu a implementação" com link para o PR</td>
+        </tr>
+        <tr>
+          <td>Logs DEV</td>
+          <td>Render → Logs</td>
+          <td class="ok"><code>"agente DEV concluído"</code> com <code>prNumber</code> e <code>durationMs</code></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- STEP 6 -->
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num step-num-auto">▶</div>
+      <h3 class="auto-title">CI roda automaticamente no branch do DEV — automático (~2–5 min)</h3>
+    </div>
+    <p>O push do branch <code>agent/task-scrum-XX</code> dispara o workflow <code>agent-dev.yml</code>
+    no GitHub Actions automaticamente.</p>
+    <p style="margin-top:0.6rem"><strong>Steps do CI executados em ordem:</strong></p>
+    <ol>
+      <li><code>npm run typecheck</code> — TypeScript sem erros de tipo</li>
+      <li><code>npm run lint</code> — ESLint sem violações</li>
+      <li><code>npm run build</code> — build sem erros</li>
+      <li><code>npm run test:coverage</code> — testes + relatório de cobertura</li>
+      <li><em>Persiste <code>.qa-coverage.json</code> no branch</em> (commit automático <code>[skip ci]</code>)</li>
+    </ol>
+    <table>
+      <thead><tr><th>O quê verificar</th><th>Onde</th><th>Esperado</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>CI iniciado</td>
+          <td>GitHub → Actions → aba <em>All workflows</em></td>
+          <td class="ok">Run "Agent DEV — CI" aparece para o branch</td>
+        </tr>
+        <tr>
+          <td>Status no PR</td>
+          <td>GitHub → PR → seção <em>Checks</em></td>
+          <td class="ok">Status check "Lint · Typecheck · Build · Test · Coverage" verde</td>
+        </tr>
+        <tr>
+          <td>Cobertura no PR</td>
+          <td>GitHub → PR → comentário do bot</td>
+          <td class="ok">Tabela com % statements / branches / functions / lines</td>
+        </tr>
+        <tr>
+          <td>.qa-coverage.json</td>
+          <td>GitHub → branch <code>agent/task-scrum-XX</code> → raiz</td>
+          <td class="ok">Arquivo presente (será lido pelo Agente QA)</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="box box-warn" style="margin-top:0.85rem">
+      <strong>⚠️ Se o CI falhar</strong>
+      <p>O Agente QA está preparado para lidar com isso — ele inicia o Loop de Correção
+      (máx 3 ciclos: cria <code>CORRECTION_REQUEST.md</code>, despacha DEV em modo correção,
+      aguarda novo CI). Você <strong>não precisa intervir</strong> — deixe o QA tentar resolver.</p>
+    </div>
+  </div>
+
+  <!-- GATE 3 -->
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num step-num-gate">G3</div>
+      <h3 class="gate-title">Gate 3/5 — Revisão humana do Pull Request</h3>
+    </div>
+    <ol>
+      <li>Abra o PR no GitHub → leia o código implementado</li>
+      <li>Verifique: código segue as convenções da stack (TypeScript strict, Drizzle ORM, Pino logging)</li>
+      <li>Verifique: testes unitários presentes para cada módulo implementado</li>
+      <li>O CI deve estar verde antes de prosseguir</li>
+      <li>Se aprovado: mova o card Jira de <strong>Aguardando Aceite Dev → Em QA</strong></li>
+    </ol>
+    <div class="box box-info" style="margin-top:0.85rem">
+      <strong>Nota: NÃO faça merge do PR ainda</strong>
+      <p>O PR é mergeado apenas após o Gate 4 (aprovação do QA). Neste gate você apenas
+      revisa o código e move o card para acionar o Agente QA.</p>
+    </div>
+  </div>
+
+  <!-- STEP 7 -->
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">7</div>
+      <h3>Em QA dispara o Agente QA — automático (~5–30 min)</h3>
+    </div>
+    <p>O orquestrador despacha o Agente QA sem mover o card (QA opera no mesmo estado <strong>Em QA</strong>).</p>
+    <div class="flow">
+<span class="human">Em QA</span>  <span class="dim">← você moveu</span>
+  └─ <span class="auto">orquestrador.handleTransition("Em QA")</span>
+      └─ action: invoke_agent(qa)  <span class="dim">← sem moveTo</span>
+          └─ <span class="auto">qaAgentQueue.add("qa:run", ...)</span>
+    </div>
+    <p style="margin-top:0.6rem">O Agente QA executa o loop de tool-use com Claude, seguindo esta lógica:</p>
+  </div>
+
+  <!-- STEP 8 -->
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num step-num-auto">▶</div>
+      <h3 class="auto-title">Agente QA — lógica interna completa</h3>
+    </div>
+
+    <p style="font-weight:600; margin-bottom:0.4rem">Passo 1 — Obtém resultado do CI e cobertura atual:</p>
+    <div class="flow">
+<span class="agent">get_workflow_run_result</span>(branch: "agent/task-scrum-XX")
+  → lê GitHub Actions API (run mais recente)
+  → lê <code>.qa-coverage.json</code> do branch (commitado pelo CI)
+  → retorna: { conclusion: "success"|"failure", coverage: { statements.pct, branches.pct, ... } }
+    </div>
+
+    <p style="font-weight:600; margin-top:1rem; margin-bottom:0.4rem">Passo 2a — Se CI falhou → Loop de Correção (máx 3 ciclos):</p>
+    <div class="flow">
+<span class="agent">create_correction_request</span>(iteration: N, description: "...", files_with_issues: [...])
+  → gera <code>CORRECTION_REQUEST.md</code> no branch com detalhes do problema
+  → insere agentRun pendente no banco
+  → enfileira DEV em modo correção (<code>correctionMode: true</code>)
+
+<span class="agent">wait_for_dev_correction</span>(agent_run_id)
+  → polling no banco a cada 30s, deadline 20 min
+  → aguarda DEV ler CORRECTION_REQUEST.md, implementar correções e commitar
+
+<span class="agent">wait_for_ci</span>(branch, current_run_id)
+  → polling no GitHub Actions a cada 30s, timeout 10 min
+  → aguarda novo CI completar (run_id &gt; current_run_id)
+
+<span class="agent">get_workflow_run_result</span>  ← avalia se CI passou agora
+  → se passou: sai do loop de correção
+  → se falhou e ciclos &lt; 3: próximo ciclo
+  → se ciclos = 3: <span class="stop">escalate_to_human</span> + finish_qa_review(passed: false)
+    </div>
+
+    <p style="font-weight:600; margin-top:1rem; margin-bottom:0.4rem">Passo 2b — Se CI passou mas cobertura &lt; 85% → Loop de Melhoria (máx 3 iterações):</p>
+    <div class="flow">
+<span class="agent">list_github_directory</span>("src")  ← mapeia testes existentes
+<span class="agent">read_github_file</span>(módulo com cobertura baixa)  ← entende o código
+<span class="agent">write_github_file</span>("src/xxx.test.ts", "...")  ← escreve testes adicionais
+<span class="agent">create_github_commit</span>("test(QA-iter-N): aumenta cobertura em xxx")
+<span class="agent">wait_for_ci</span>(branch, current_run_id)  ← aguarda CI re-executar
+<span class="agent">get_workflow_run_result</span>  ← verifica nova cobertura
+  → se ≥ 85%: aprovado, avança
+  → se &lt; 85% e iter &lt; 3: próxima iteração
+  → se iter = 3: <span class="stop">escalate_to_human</span>
+    </div>
+
+    <p style="font-weight:600; margin-top:1rem; margin-bottom:0.4rem">Passo 3 — Finalização (sempre executada):</p>
+    <div class="flow">
+<span class="agent">finish_qa_review</span>(passed: true/false, coverage: {...}, summary: "...", iterations: N)
+  → processQaJob move card para <strong>Aguardando Aceite QA</strong>
+  → salva artefatos test_report e coverage_report no banco
+  → comenta resultado no Jira
+    </div>
+
+    <table style="margin-top:0.85rem">
+      <thead><tr><th>Cenário</th><th>Resultado esperado</th><th>Duração típica</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>CI verde + cobertura ≥ 85%</td>
+          <td class="ok">Aprovado na primeira verificação — 0 iterações</td>
+          <td>~1–2 min</td>
+        </tr>
+        <tr>
+          <td>CI verde + cobertura &lt; 85%</td>
+          <td class="warn">QA escreve testes adicionais (1–3 iterações)</td>
+          <td>~5–15 min</td>
+        </tr>
+        <tr>
+          <td>CI falhou (testes quebrando)</td>
+          <td class="warn">Loop de correção: DEV corrige, CI re-executa (1–3 ciclos)</td>
+          <td>~20–60 min</td>
+        </tr>
+        <tr>
+          <td>3 ciclos de correção falharam</td>
+          <td class="err">Escalado para humano — card fica em Aguardando Aceite QA com <code>passed: false</code></td>
+          <td>~60–90 min</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- STEP 9 — Resultados do QA -->
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num step-num-auto">▶</div>
+      <h3 class="auto-title">Onde verificar os resultados do Agente QA</h3>
+    </div>
+    <table>
+      <thead><tr><th>O quê</th><th>Onde verificar</th><th>Esperado</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>Card no board</td>
+          <td>Jira board</td>
+          <td class="ok">Aguardando Aceite QA</td>
+        </tr>
+        <tr>
+          <td>Relatório QA</td>
+          <td>Card → aba Comments (último comentário)</td>
+          <td class="ok">"🤖 Agente QA concluiu a revisão" com % cobertura e iterações</td>
+        </tr>
+        <tr>
+          <td>Cobertura final</td>
+          <td>Comentário do QA no Jira</td>
+          <td class="ok">statements ≥ 85%, branches ≥ 85%, functions ≥ 85%, lines ≥ 85%</td>
+        </tr>
+        <tr>
+          <td>Testes adicionais (se iterações &gt; 0)</td>
+          <td>GitHub → PR → Commits (commits mais recentes)</td>
+          <td class="ok">Commits <code>test(QA-iter-N): ...</code> com arquivos <code>*.test.ts</code></td>
+        </tr>
+        <tr>
+          <td>Commit de correção (se loop de correção)</td>
+          <td>GitHub → branch → raiz</td>
+          <td class="ok">Arquivo <code>CORRECTION_REQUEST.md</code> + commits do DEV em modo correção</td>
+        </tr>
+        <tr>
+          <td>GitHub Actions (iterações de QA)</td>
+          <td>GitHub → Actions</td>
+          <td class="ok">Um run de CI por iteração do loop, todos com status verde ao final</td>
+        </tr>
+        <tr>
+          <td>Logs QA no Render</td>
+          <td>Render → Logs → filtrar <code>agent.qa</code></td>
+          <td class="ok"><code>"agente QA concluído"</code> com <code>passed: true</code> e <code>iterations</code></td>
+        </tr>
+        <tr>
+          <td>Artefatos no banco</td>
+          <td>Supabase → tabela <code>artifacts</code></td>
+          <td class="ok">Linhas com <code>artifact_type = "test_report"</code> e <code>"coverage_report"</code></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- GATE 4 -->
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num step-num-gate">G4</div>
+      <h3 class="gate-title">Gate 4/5 — Revisão humana do relatório de QA</h3>
+    </div>
+    <ol>
+      <li>Leia o comentário do Agente QA no card do Jira</li>
+      <li>Confira as métricas de cobertura reportadas (deve ser ≥ 85% em todos os critérios)</li>
+      <li>Abra o GitHub → PR → confirme que o CI está verde e o status check passou</li>
+      <li>Revise os testes escritos pelo QA (se houver arquivos <code>*.test.ts</code> novos nos commits)</li>
+      <li>Se aprovado: mova o card de <strong>Aguardando Aceite QA → Validação Final</strong></li>
+      <li>Se escalado para humano (<code>passed: false</code>): aumente a cobertura manualmente ou ajuste o código antes de mover</li>
+    </ol>
+  </div>
+
+  <!-- GATE 5 -->
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num step-num-gate">G5</div>
+      <h3 class="gate-title">Gate 5/5 — Validação Final e conclusão</h3>
+    </div>
+    <ol>
+      <li>Faça o <strong>merge do PR</strong> no GitHub (squash ou merge commit)</li>
+      <li>Verifique que o CI passa no branch <code>master</code> após o merge</li>
+      <li>Mova o card de <strong>Validação Final → Concluído</strong></li>
+    </ol>
+    <div class="box box-success" style="margin-top:0.85rem">
+      <strong>✅ História concluída</strong>
+      <p>O orquestrador processa a transição "Concluído" como estado terminal e não dispara mais nenhum agente.
+      A história atravessou os 13 estados e os 5 gates humanos com sucesso.</p>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       CHEKLIST COMPLETO
+  ══════════════════════════════════════════════════════════════════════ -->
+  <hr class="divider" />
+  <p class="section-title">Checklist de validação completo</p>
+
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">☑</div>
+      <h3>Use durante o teste — marque cada item ao validar</h3>
+    </div>
+    <p style="font-weight:600; margin-bottom:0.4rem; color:#90cdf4">Fase 1 — Orquestrador</p>
+    <ul class="checklist">
+      <li><code>GET /health</code> retorna <code>{ "status": "ok", "checks": { "database": "ok", "redis": "ok" } }</code></li>
+      <li>Card criado em Backlog — nenhum webhook disparado</li>
+      <li>Card movido para "A Refinar" → webhook recebido (Render Logs: <code>"processando transição"</code>)</li>
+      <li>Card movido automaticamente para "Em Refinamento" (~5–10s)</li>
+      <li>Agente PO enfileirado (Logs: <code>"job enfileirado para agente PO"</code>)</li>
+
+    </ul>
+    <p style="font-weight:600; margin-top:1rem; margin-bottom:0.4rem; color:#90cdf4">Fase 2 — PO e LT</p>
+    <ul class="checklist">
+      <li>Branch <code>prd/scrum-XX</code> criado no GitHub com <code>PRD.md</code></li>
+      <li>Card em "Aguardando Aceite PRD" com comentário do bot no Jira</li>
+      <li>PRD.md contém ao menos 5 RFs, critérios mensuráveis e seção de riscos</li>
+      <li>[Gate 1] Você moveu para "PRD Aceito" após revisar</li>
+      <li>Agente LT enfileirado (Logs: <code>"job enfileirado para agente LT"</code>)</li>
+      <li><code>PLANO_DE_EXECUCAO.md</code> commitado com tasks numeradas e ondas de execução</li>
+      <li>Card em "Aguardando Aceite Plano" com comentário do LT</li>
+      <li>[Gate 2] Você moveu para "Plano Validado" após revisar</li>
+    </ul>
+    <p style="font-weight:600; margin-top:1rem; margin-bottom:0.4rem; color:#90cdf4">Fase 3 — DEV</p>
+    <ul class="checklist">
+      <li>Card movido automaticamente para "Em Desenvolvimento" ao aprovar "Plano Validado"</li>
+      <li>Branch <code>agent/task-scrum-XX</code> criado no GitHub</li>
+      <li>Commits no formato <code>feat(TASK-XX): ...</code> com arquivos de implementação e testes</li>
+      <li>Pull Request aberto com título <code>[SCRUM-XX] descrição</code> e body estruturado</li>
+      <li>Card em "Aguardando Aceite Dev" com link para o PR</li>
+      <li>CI rodou no branch (<code>agent-dev.yml</code>) e <code>.qa-coverage.json</code> foi commitado</li>
+      <li>[Gate 3] Você revisou o PR e moveu para "Em QA"</li>
+    </ul>
+    <p style="font-weight:600; margin-top:1rem; margin-bottom:0.4rem; color:#90cdf4">Fase 3 — QA</p>
+    <ul class="checklist">
+      <li>Agente QA enfileirado (Logs: <code>"iniciando execução do agente QA"</code>)</li>
+      <li>QA leu o resultado do CI via <code>get_workflow_run_result</code></li>
+      <li>Se CI falhou: <code>CORRECTION_REQUEST.md</code> criado + DEV correction enfileirado</li>
+      <li>Se cobertura &lt; 85%: commits <code>test(QA-iter-N)</code> presentes no branch</li>
+      <li>Card movido para "Aguardando Aceite QA" com comentário de resultado</li>
+      <li>Cobertura final ≥ 85% em statements, branches, functions e lines</li>
+      <li>[Gate 4] Você revisou o relatório e moveu para "Validação Final"</li>
+      <li>[Gate 5] PR mergeado no master + card movido para "Concluído"</li>
+    </ul>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       TROUBLESHOOTING
+  ══════════════════════════════════════════════════════════════════════ -->
+  <hr class="divider" />
+  <p class="section-title">Diagnóstico de problemas comuns</p>
+
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">?</div>
+      <h3>Guia de troubleshooting</h3>
+    </div>
+    <table>
+      <thead><tr><th>Sintoma</th><th>Causa provável</th><th>Como resolver</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>Webhook não chega (card não move)</td>
+          <td>URL do webhook errada ou serviço fora do ar</td>
+          <td>Jira → Webhooks → Recent Deliveries. Verificar <code>/health</code> do Render.</td>
+        </tr>
+        <tr>
+          <td>Card move mas nada acontece depois</td>
+          <td>Job enfileirado mas worker não processa</td>
+          <td>Render Logs → filtrar <code>bullmq</code>. Verificar <code>REDIS_URL</code> no Render.</td>
+        </tr>
+        <tr>
+          <td>Agente PO falha — PRD.md não criado</td>
+          <td><code>GITHUB_OWNER</code> ou <code>ANTHROPIC_API_KEY</code> incorretos</td>
+          <td>Render → Environment → confirmar <code>GITHUB_OWNER=matheuscv</code> (só o username).</td>
+        </tr>
+        <tr>
+          <td>DEV cria branch mas não cria PR</td>
+          <td>GitHub App sem permissão de Pull Requests</td>
+          <td>GitHub → Settings → Developer settings → GitHub Apps → permissões do app.</td>
+        </tr>
+        <tr>
+          <td>CI não roda no branch do DEV</td>
+          <td>GitHub Actions desabilitado ou <code>agent-dev.yml</code> ausente no master</td>
+          <td>GitHub → Actions → Enable. Confirmar que <code>.github/workflows/agent-dev.yml</code> está no master.</td>
+        </tr>
+        <tr>
+          <td>QA fica em loop ou não finaliza</td>
+          <td>DEV correction não conclui dentro de 20 min</td>
+          <td>Render Logs → filtrar <code>agent.qa</code> e <code>agent.dev</code>. Verificar se DEV job existe no BullMQ.</td>
+        </tr>
+        <tr>
+          <td>Escalado para humano após 3 ciclos</td>
+          <td>Problema estrutural no código gerado</td>
+          <td>Leia o <code>CORRECTION_REQUEST.md</code> no branch. Corrija manualmente e reinicie movendo o card para "Em QA" novamente.</td>
+        </tr>
+        <tr>
+          <td>Reconciliador dispara reprocessamento inesperado</td>
+          <td>Estado no banco divergiu do Jira</td>
+          <td>Comportamento esperado — o reconciliador detecta divergências e as corrige. Verifique se o resultado final é correto.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       TESTES AUTOMATIZADOS
+  ══════════════════════════════════════════════════════════════════════ -->
+  <hr class="divider" />
+  <p class="section-title">Testes automatizados — validação sem infraestrutura real</p>
+
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">⚡</div>
+      <h3>Executar a suíte de testes local</h3>
+    </div>
+    <p>Os 59 testes automatizados cobrem o comportamento de todas as fases sem depender de Jira, GitHub ou Anthropic:</p>
+    <pre><span class="c"># Todos os testes</span>
+npx vitest run
+
+<span class="c"># Apenas integração (orquestrador + DEV + QA)</span>
+npx vitest run src/tests/integration
+
+<span class="c"># Com relatório de cobertura</span>
+npx vitest run --coverage</pre>
+    <table>
+      <thead><tr><th>Arquivo de teste</th><th>O que cobre</th><th>Testes</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><code>state-machine.test.ts</code></td>
+          <td>Todos os 13 estados, transições válidas, regressões rejeitadas, estados terminais</td>
+          <td class="ok">29 ✓</td>
+        </tr>
+        <tr>
+          <td><code>orchestrator.integration.test.ts</code></td>
+          <td>Dispatch correto por status (PO, LT, DEV, QA), retrogressão rejeitada, status desconhecido</td>
+          <td class="ok">6 ✓</td>
+        </tr>
+        <tr>
+          <td><code>dev-agent.integration.test.ts</code></td>
+          <td>Loop tool-use modo normal (SCRUM-50), modo correção (SCRUM-51), PR, commit, Jira</td>
+          <td class="ok">11 ✓</td>
+        </tr>
+        <tr>
+          <td><code>qa-correction-loop.integration.test.ts</code></td>
+          <td>Happy path (0 iterações), 1 ciclo de correção, 3 ciclos + escalação para humano</td>
+          <td class="ok">13 ✓</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <footer>
+    Squad Agêntica · Validação Fases 1, 2 e 3 · Gerado em 2026-05-25
+  </footer>
+
+</div>
+</body>
+</html>
