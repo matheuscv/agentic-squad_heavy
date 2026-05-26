@@ -36,8 +36,8 @@ type DevAgentResult = {
 export const devAgentQueue = new Queue<DevAgentJobData>('agent-dev', {
   connection: redisConnection,
   defaultJobOptions: {
-    attempts: 2,
-    backoff: { type: 'exponential', delay: 10_000 },
+    attempts: 4,
+    backoff: { type: 'exponential', delay: 60_000 },
     removeOnComplete: { count: 25 },
     removeOnFail: { count: 10 },
   },

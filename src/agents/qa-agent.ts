@@ -45,8 +45,8 @@ type QaAgentResult = {
 export const qaAgentQueue = new Queue<QaAgentJobData>('agent-qa', {
   connection: redisConnection,
   defaultJobOptions: {
-    attempts: 2,
-    backoff: { type: 'exponential', delay: 15_000 },
+    attempts: 4,
+    backoff: { type: 'exponential', delay: 60_000 },
     removeOnComplete: { count: 25 },
     removeOnFail: { count: 10 },
   },
