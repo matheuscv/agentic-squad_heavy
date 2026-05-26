@@ -7,6 +7,7 @@ import { redisConnection } from '../queue/index';
 import { getIssue, moveCardTo, addComment } from '../jira/client';
 import { commitFile, createBranch, readFile } from '../github/client';
 import { childLogger } from '../lib/logger';
+import { waitForAnthropicCapacity } from '../lib/anthropic-rate-limiter';
 import { PO_SYSTEM_PROMPT } from './prompts/po-system-prompt';
 
 const log = childLogger({ module: 'agent.po' });
@@ -115,6 +116,7 @@ Lembre-se: responda APENAS com o markdown do PRD, começando com "# PRD —".`,
   jobLog.debug({ model, jiraKey }, 'iniciando loop de tool-use com Claude');
 
   for (let turn = 0; turn < 10; turn++) {
+    await waitForAnthropicCapacity(redisConnection);
     const response = await anthropic.messages.create({
       model,
       max_tokens: 8192,

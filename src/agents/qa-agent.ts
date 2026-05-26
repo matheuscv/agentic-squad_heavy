@@ -14,6 +14,7 @@ import {
 } from '../github/client';
 import { devAgentQueue } from './dev-agent';
 import { childLogger } from '../lib/logger';
+import { waitForAnthropicCapacity } from '../lib/anthropic-rate-limiter';
 import { QA_SYSTEM_PROMPT } from './prompts/qa-system-prompt';
 
 function sleep(ms: number): Promise<void> {
@@ -309,6 +310,7 @@ async function runQaAgent(
 
   // QA pode ter ciclos de espera de 10 min cada → até 50 turnos
   for (let turn = 0; turn < 50; turn++) {
+    await waitForAnthropicCapacity(redisConnection);
     const response = await anthropic.messages.create({
       model,
       max_tokens: 8192,

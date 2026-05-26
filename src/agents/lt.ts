@@ -7,6 +7,7 @@ import { redisConnection } from '../queue/index';
 import { moveCardTo, addComment } from '../jira/client';
 import { commitFile, readFile } from '../github/client';
 import { childLogger } from '../lib/logger';
+import { waitForAnthropicCapacity } from '../lib/anthropic-rate-limiter';
 import { LT_SYSTEM_PROMPT } from './prompts/lt-system-prompt';
 
 const log = childLogger({ module: 'agent.lt' });
@@ -96,6 +97,7 @@ Lembre-se: responda APENAS com o markdown do plano, começando com "# Plano de E
   jobLog.debug({ model, prdBranch }, 'iniciando loop de tool-use com Claude');
 
   for (let turn = 0; turn < 10; turn++) {
+    await waitForAnthropicCapacity(redisConnection);
     const response = await anthropic.messages.create({
       model,
       max_tokens: 8192,

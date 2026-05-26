@@ -7,6 +7,7 @@ import { redisConnection } from '../queue/index';
 import { moveCardTo, addComment } from '../jira/client';
 import { createBranch, readFile, listDirectory, commitFiles, createPullRequest, type PullRequestResult } from '../github/client';
 import { childLogger } from '../lib/logger';
+import { waitForAnthropicCapacity } from '../lib/anthropic-rate-limiter';
 import { DEV_SYSTEM_PROMPT } from './prompts/dev-system-prompt';
 
 const log = childLogger({ module: 'agent.dev' });
@@ -191,6 +192,7 @@ Lembre-se:
   jobLog.debug({ model }, 'iniciando loop de tool-use com Claude');
 
   for (let turn = 0; turn < 40; turn++) {
+    await waitForAnthropicCapacity(redisConnection);
     const response = await anthropic.messages.create({
       model,
       max_tokens: 8192,
