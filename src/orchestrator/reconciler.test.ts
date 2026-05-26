@@ -91,71 +91,47 @@ const dbStories = [
   },
 ];
 
-const jiraIssues = [
-  {
-    id: '10001',
-    key: 'SCRUM-1',
-    fields: { summary: 'História 1', status: { name: 'In Progress' } },
-  },
-  {
-    id: '10002',
-    key: 'SCRUM-2',
-    fields: { summary: 'História 2', status: { name: 'Em Refinamento' } },
-  },
-];
-
 // ─── Suite ────────────────────────────────────────────────────────────────────
+
+// Helper: cria reconciler, avança timers e limpa
+async function runReconcilerCycle(advanceMs = 91_000): Promise<ReturnType<typeof clearInterval>> {
+  const { createReconciler } = await import('./reconciler');
+  const timer = createReconciler();
+  await vi.advanceTimersByTimeAsync(advanceMs);
+  clearInterval(timer);
+  return timer;
+}
 
 describe('reconciler', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.useFakeTimers();
     // Configura a cadeia do db
     mockDbSelect.select.mockReturnThis();
     mockDbSelect.from.mockReturnThis();
   });
 
+  afterEach(() => {
+    vi.useRealTimers();
+    delete process.env.JIRA_PROJECT_KEY;
+  });
+
   describe('createReconciler', () => {
-    it('retorna objeto com método start()', async () => {
-      const { createReconciler } = await import('./reconciler');
-      const reconciler = createReconciler();
-      expect(reconciler).toHaveProperty('start');
-      expect(typeof reconciler.start).toBe('function');
-    });
-
-    it('start() retorna função stop()', async () => {
-      vi.useFakeTimers();
+    it('retorna NodeJS.Timeout ao ser criado', async () => {
       mockDbSelect.where.mockResolvedValue([]);
-      process.env.JIRA_PROJECT_KEY = 'SCRUM';
-
       const { createReconciler } = await import('./reconciler');
-      const reconciler = createReconciler();
-      const stop = reconciler.start();
-
-      expect(typeof stop).toBe('function');
-      stop();
-      vi.useRealTimers();
-      delete process.env.JIRA_PROJECT_KEY;
+      const timer = createReconciler();
+      expect(timer).toBeDefined();
+      clearInterval(timer);
     });
   });
 
   describe('ciclo de reconciliação', () => {
-    afterEach(() => {
-      delete process.env.JIRA_PROJECT_KEY;
-    });
-
     it('ignora ciclo quando JIRA_PROJECT_KEY não está definido', async () => {
       delete process.env.JIRA_PROJECT_KEY;
-      vi.useFakeTimers();
-
       mockDbSelect.where.mockResolvedValue([]);
 
-      const { createReconciler } = await import('./reconciler');
-      const reconciler = createReconciler();
-      const stop = reconciler.start();
-
-      await vi.advanceTimersByTimeAsync(91_000);
-      stop();
-      vi.useRealTimers();
+      await runReconcilerCycle();
 
       expect(mockLog.warn).toHaveBeenCalledWith(
         expect.stringContaining('JIRA_PROJECT_KEY'),
@@ -164,17 +140,9 @@ describe('reconciler', () => {
 
     it('encerra ciclo quando não há stories em andamento', async () => {
       process.env.JIRA_PROJECT_KEY = 'SCRUM';
-      vi.useFakeTimers();
-
       mockDbSelect.where.mockResolvedValue([]);
 
-      const { createReconciler } = await import('./reconciler');
-      const reconciler = createReconciler();
-      const stop = reconciler.start();
-
-      await vi.advanceTimersByTimeAsync(91_000);
-      stop();
-      vi.useRealTimers();
+      await runReconcilerCycle();
 
       expect(mockFetchActiveIssues).not.toHaveBeenCalled();
       expect(mockLog.debug).toHaveBeenCalledWith(
@@ -184,7 +152,6 @@ describe('reconciler', () => {
 
     it('reenfileira story quando Jira está à frente do banco', async () => {
       process.env.JIRA_PROJECT_KEY = 'SCRUM';
-      vi.useFakeTimers();
 
       const storyAhead = [{ ...dbStories[0], jiraStatus: 'In Progress' }];
       const jiraAhead = [
@@ -198,7 +165,6 @@ describe('reconciler', () => {
       mockDbSelect.where.mockResolvedValue(storyAhead);
       mockFetchActiveIssues.mockResolvedValue(jiraAhead);
 
-      // Jira está na ordem 3, DB está na ordem 2 → divergência
       mockGetStateOrder.mockImplementation((status: string) => {
         if (status === 'In Progress') return 2;
         if (status === 'Em Desenvolvimento') return 3;
@@ -206,13 +172,7 @@ describe('reconciler', () => {
       });
       mockIsKnownStatus.mockReturnValue(true);
 
-      const { createReconciler } = await import('./reconciler');
-      const reconciler = createReconciler();
-      const stop = reconciler.start();
-
-      await vi.advanceTimersByTimeAsync(91_000);
-      stop();
-      vi.useRealTimers();
+      await runReconcilerCycle();
 
       expect(mockOrchestratorQueue.add).toHaveBeenCalledWith(
         'jira:transition',
@@ -227,7 +187,6 @@ describe('reconciler', () => {
 
     it('loga warn quando banco está à frente do Jira', async () => {
       process.env.JIRA_PROJECT_KEY = 'SCRUM';
-      vi.useFakeTimers();
 
       const storyDbAhead = [{ ...dbStories[0], jiraStatus: 'Em Desenvolvimento' }];
       const jiraBehind = [
@@ -241,7 +200,6 @@ describe('reconciler', () => {
       mockDbSelect.where.mockResolvedValue(storyDbAhead);
       mockFetchActiveIssues.mockResolvedValue(jiraBehind);
 
-      // DB está na ordem 3, Jira está na ordem 2 → banco à frente
       mockGetStateOrder.mockImplementation((status: string) => {
         if (status === 'Em Desenvolvimento') return 3;
         if (status === 'In Progress') return 2;
@@ -249,13 +207,7 @@ describe('reconciler', () => {
       });
       mockIsKnownStatus.mockReturnValue(true);
 
-      const { createReconciler } = await import('./reconciler');
-      const reconciler = createReconciler();
-      const stop = reconciler.start();
-
-      await vi.advanceTimersByTimeAsync(91_000);
-      stop();
-      vi.useRealTimers();
+      await runReconcilerCycle();
 
       expect(mockOrchestratorQueue.add).not.toHaveBeenCalled();
       expect(mockLog.warn).toHaveBeenCalledWith(
@@ -266,7 +218,6 @@ describe('reconciler', () => {
 
     it('loga warn para status Jira desconhecido', async () => {
       process.env.JIRA_PROJECT_KEY = 'SCRUM';
-      vi.useFakeTimers();
 
       const story = [{ ...dbStories[0], jiraStatus: 'In Progress' }];
       const jiraUnknown = [
@@ -282,13 +233,7 @@ describe('reconciler', () => {
       mockGetStateOrder.mockReturnValue(0);
       mockIsKnownStatus.mockReturnValue(false);
 
-      const { createReconciler } = await import('./reconciler');
-      const reconciler = createReconciler();
-      const stop = reconciler.start();
-
-      await vi.advanceTimersByTimeAsync(91_000);
-      stop();
-      vi.useRealTimers();
+      await runReconcilerCycle();
 
       expect(mockLog.warn).toHaveBeenCalledWith(
         expect.objectContaining({ status: 'Unknown Status XYZ' }),
@@ -298,18 +243,11 @@ describe('reconciler', () => {
 
     it('loga error e interrompe ciclo quando fetchActiveIssues falha', async () => {
       process.env.JIRA_PROJECT_KEY = 'SCRUM';
-      vi.useFakeTimers();
 
       mockDbSelect.where.mockResolvedValue([dbStories[0]]);
       mockFetchActiveIssues.mockRejectedValue(new Error('Jira unreachable'));
 
-      const { createReconciler } = await import('./reconciler');
-      const reconciler = createReconciler();
-      const stop = reconciler.start();
-
-      await vi.advanceTimersByTimeAsync(91_000);
-      stop();
-      vi.useRealTimers();
+      await runReconcilerCycle();
 
       expect(mockLog.error).toHaveBeenCalledWith(
         expect.objectContaining({ err: 'Jira unreachable' }),
@@ -320,19 +258,11 @@ describe('reconciler', () => {
 
     it('ignora story sem correspondência no Jira (resolvida ou em backlog)', async () => {
       process.env.JIRA_PROJECT_KEY = 'SCRUM';
-      vi.useFakeTimers();
 
       mockDbSelect.where.mockResolvedValue([dbStories[0]]);
-      // Jira não retorna SCRUM-1
       mockFetchActiveIssues.mockResolvedValue([]);
 
-      const { createReconciler } = await import('./reconciler');
-      const reconciler = createReconciler();
-      const stop = reconciler.start();
-
-      await vi.advanceTimersByTimeAsync(91_000);
-      stop();
-      vi.useRealTimers();
+      await runReconcilerCycle();
 
       expect(mockOrchestratorQueue.add).not.toHaveBeenCalled();
       expect(mockLog.debug).toHaveBeenCalledWith(
@@ -343,9 +273,7 @@ describe('reconciler', () => {
 
     it('não reenfileira quando status Jira e banco são iguais', async () => {
       process.env.JIRA_PROJECT_KEY = 'SCRUM';
-      vi.useFakeTimers();
 
-      // Mesmo status
       mockDbSelect.where.mockResolvedValue([dbStories[0]]);
       mockFetchActiveIssues.mockResolvedValue([
         {
@@ -355,13 +283,7 @@ describe('reconciler', () => {
         },
       ]);
 
-      const { createReconciler } = await import('./reconciler');
-      const reconciler = createReconciler();
-      const stop = reconciler.start();
-
-      await vi.advanceTimersByTimeAsync(91_000);
-      stop();
-      vi.useRealTimers();
+      await runReconcilerCycle();
 
       expect(mockOrchestratorQueue.add).not.toHaveBeenCalled();
     });
