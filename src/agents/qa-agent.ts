@@ -294,10 +294,10 @@ async function runQaAgent(
     const response = await anthropic.messages.create({
       model,
       max_tokens: 8192,
-      system: [{ type: 'text', text: QA_SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
+      system: QA_SYSTEM_PROMPT,
       tools: QA_TOOLS,
       messages,
-    } as Parameters<typeof anthropic.messages.create>[0]);
+    });
 
     jobLog.debug(
       { turn, stop_reason: response.stop_reason, usage: response.usage },
