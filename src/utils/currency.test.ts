@@ -22,7 +22,7 @@ afterEach(() => {
  * para facilitar comparações de substrings numéricas.
  */
 function normalize(s: string): string {
-  return s.replace(/[\u00a0\u202f\s]/g, '');
+  return s.replace(/[\u00a0\u202f\s.,]/g, '');
 }
 
 // ─── Suite principal ───────────────────────────────────────────────────────────

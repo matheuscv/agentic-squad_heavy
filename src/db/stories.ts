@@ -20,6 +20,14 @@ function resolveDbStatus(jiraStatusName: string) {
 
 // ─── Funções públicas ─────────────────────────────────────────────────────────
 
+export async function findStoryByJiraKey(jiraKey: string) {
+  const rows = await db
+    .select()
+    .from(schema.stories)
+    .where(eq(schema.stories.jiraKey, jiraKey));
+  return rows[0] ?? null;
+}
+
 /**
  * Cria ou atualiza uma história a partir dos dados do webhook.
  * Chamada pelo Orchestrator Worker a cada evento Jira recebido.
@@ -84,6 +92,7 @@ export async function updateStoryStatus(
     .where(eq(schema.stories.jiraKey, jiraKey))
     .returning({ id: schema.stories.id, status: schema.stories.status });
 
+  if (!story) throw new Error(`Story não encontrada: ${jiraKey}`);
   return story;
 }
 

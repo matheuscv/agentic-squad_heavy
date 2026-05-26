@@ -141,7 +141,7 @@ describe('POST /webhooks/jira', () => {
       const payloadSemStatus = {
         ...validPayload,
         changelog: {
-          items: [{ field: 'description', fieldtype: 'jira', from: null, to: null }],
+          items: [{ field: 'description', fieldtype: 'jira' }],
         },
       };
       const res = await request(app)

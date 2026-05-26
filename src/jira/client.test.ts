@@ -203,9 +203,9 @@ describe('addComment', () => {
   });
 });
 
-// ─── transitionIssueByName ────────────────────────────────────────────────────
+// ─── moveCardTo ───────────────────────────────────────────────────────────────
 
-describe('transitionIssueByName', () => {
+describe('moveCardTo', () => {
   it('resolve transitionId pelo nome e executa a transição', async () => {
     const mockTransitions = {
       transitions: [
@@ -217,8 +217,8 @@ describe('transitionIssueByName', () => {
       .mockResolvedValueOnce(makeOkResponse(mockTransitions))
       .mockResolvedValueOnce(make204Response());
 
-    const { transitionIssueByName } = await importClient();
-    await transitionIssueByName('SCRUM-1', 'Em Refinamento');
+    const { moveCardTo } = await importClient();
+    await moveCardTo('SCRUM-1', 'Em Refinamento');
 
     expect(mockFetch).toHaveBeenCalledTimes(2);
     const [, opts] = mockFetch.mock.calls[1];
@@ -234,8 +234,8 @@ describe('transitionIssueByName', () => {
     };
     mockFetch.mockResolvedValueOnce(makeOkResponse(mockTransitions));
 
-    const { transitionIssueByName } = await importClient();
-    await expect(transitionIssueByName('SCRUM-1', 'Status Inexistente')).rejects.toThrow(
+    const { moveCardTo } = await importClient();
+    await expect(moveCardTo('SCRUM-1', 'Status Inexistente')).rejects.toThrow(
       'Status Inexistente',
     );
   });

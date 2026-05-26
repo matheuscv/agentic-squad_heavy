@@ -1,5 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+// ─── Mock drizzle-orm ─────────────────────────────────────────────────────────
+
+vi.mock('drizzle-orm', () => ({
+  eq: vi.fn().mockReturnValue('eq-condition'),
+  sql: vi.fn().mockReturnValue('sql-expr'),
+}));
+
 // ─── Mock drizzle-orm db ───────────────────────────────────────────────────────
 
 const mockDb = {
@@ -10,6 +17,7 @@ const mockDb = {
   returning: vi.fn().mockReturnThis(),
   insert: vi.fn().mockReturnThis(),
   values: vi.fn().mockReturnThis(),
+  onConflictDoUpdate: vi.fn().mockReturnThis(),
   update: vi.fn().mockReturnThis(),
   set: vi.fn().mockReturnThis(),
   execute: vi.fn(),
@@ -17,6 +25,13 @@ const mockDb = {
 
 vi.mock('../db/index', () => ({
   db: mockDb,
+  schema: {
+    stories: {
+      jiraKey: 'stories.jiraKey',
+      status: 'stories.status',
+      id: 'stories.id',
+    },
+  },
 }));
 
 vi.mock('../lib/logger', () => ({
@@ -55,6 +70,7 @@ describe('findStoryByJiraKey', () => {
     mockDb.returning.mockReturnThis();
     mockDb.insert.mockReturnThis();
     mockDb.values.mockReturnThis();
+    mockDb.onConflictDoUpdate.mockReturnThis();
     mockDb.update.mockReturnThis();
     mockDb.set.mockReturnThis();
   });
@@ -98,6 +114,7 @@ describe('upsertStory', () => {
     mockDb.returning.mockReturnThis();
     mockDb.insert.mockReturnThis();
     mockDb.values.mockReturnThis();
+    mockDb.onConflictDoUpdate.mockReturnThis();
     mockDb.update.mockReturnThis();
     mockDb.set.mockReturnThis();
   });
@@ -159,6 +176,7 @@ describe('updateStoryStatus', () => {
     mockDb.returning.mockReturnThis();
     mockDb.insert.mockReturnThis();
     mockDb.values.mockReturnThis();
+    mockDb.onConflictDoUpdate.mockReturnThis();
     mockDb.update.mockReturnThis();
     mockDb.set.mockReturnThis();
   });
