@@ -74,6 +74,10 @@ vi.mock('../../db/index', () => ({
 
 vi.mock('../../queue/index', () => ({ redisConnection: {} }));
 
+vi.mock('../../lib/anthropic-rate-limiter', () => ({
+  waitForAnthropicCapacity: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock('../../lib/logger', () => ({
   childLogger: () => ({
     info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn(),
