@@ -1,17 +1,12 @@
 # Pedido de Correção — Iteração 1/3
 ## Problema detectado
-O CI do branch `agent/task-scrum-16` está falhando (conclusion: 'failure') com cobertura global muito abaixo do mínimo de 85%. As métricas atuais são: statements 46.17%, branches 64.33%, functions 54.83%, lines 46.17%.
-
-O arquivo `src/utils/currency.test.ts` utiliza `vi.spyOn(globalThis, 'Intl', 'get')` para mockar o `Intl.NumberFormat`. Esta abordagem pode estar causando erros no CI, pois `Intl` pode não ser uma propriedade configurável do objeto global em todos os ambientes Node.js, especialmente na versão que roda no CI. Além disso, o fallback dentro de `mockFormat` chama `new Intl.NumberFormat(...)` com o próprio Intl já mockado, o que pode causar recursão infinita ou erros.
-
-As correções necessárias são:
-1. Reescrever o arquivo `src/utils/currency.test.ts` para remover o uso de `vi.spyOn(globalThis, 'Intl', 'get')`. Em vez disso, usar uma abordagem mais simples e estável: testar os resultados reais do `Intl.NumberFormat` ou usar `vi.stubGlobal` de forma mais segura.
-2. A melhor abordagem é testar a função com valores reais (sem mock do Intl) usando assertions flexíveis que verificam presença de símbolo de moeda e valores numéricos, sem depender de formatação exacta de locale — já que isso varia entre ambientes.
-3. Garantir que o módulo `src/utils/currency.ts` esteja corretamente implementado e que os testes cubram: caminho feliz para BRL, USD e EUR; valor zero; valor negativo; erro para moeda inválida; arredondamento de decimais.
+O CI está falhando no branch agent/task-scrum-16 (run #26459561776). A causa raiz é que a cobertura geral do projeto está criticamente baixa: statements 46.17%, functions 54.83%, branches 64.33%, lines 46.17% — muito abaixo do mínimo de 85% exigido. O módulo implementado `src/utils/currency.ts` já possui arquivo de teste `src/utils/currency.test.ts`, mas o conjunto de testes da suíte completa não é suficiente para cobrir os demais módulos do projeto (agents, api, db, github, jira, lib, orchestrator, queue, webhooks). É preciso que o CI passe com cobertura ≥ 85% em todas as métricas (statements, branches, functions, lines). Verifique se há configuração de threshold no vitest/jest que está fazendo o CI falhar devido à baixa cobertura, e certifique-se de que os thresholds estão corretamente configurados ou que os testes existentes cubram os módulos principais. Além disso, verifique se o arquivo `src/utils/currency.test.ts` está correto e sem erros de sintaxe (o arquivo foi truncado na leitura, o que pode indicar problemas).
 ## Arquivos com problemas
+- `src/utils/currency.ts`
 - `src/utils/currency.test.ts`
-## Testes falhando
-- currency.test.ts — mock de Intl via vi.spyOn(globalThis, 'Intl', 'get') instável no CI
+- `src/tests/integration/dev-agent.integration.test.ts`
+- `src/tests/integration/orchestrator.integration.test.ts`
+- `src/tests/integration/qa-correction-loop.integration.test.ts`
 ## Cobertura insuficiente
 ```json
 {
@@ -20,14 +15,8 @@ As correções necessárias são:
     "branches": 64.33,
     "functions": 54.83,
     "lines": 46.17
-  },
-  "total": {
-    "statements": 46.17,
-    "branches": 64.33,
-    "functions": 54.83,
-    "lines": 46.17
   }
 }
 ```
 ---
-_Gerado pelo Agente QA em 2026-05-26T15:54:32.554Z_
+_Gerado pelo Agente QA em 2026-05-26T16:14:29.747Z_
