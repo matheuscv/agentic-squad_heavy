@@ -307,8 +307,8 @@ async function runQaAgent(
 
   jobLog.info({ model }, 'iniciando loop de tool-use QA com Claude');
 
-  // QA pode ter ciclos de espera de 10 min cada → até 25 turnos
-  for (let turn = 0; turn < 25; turn++) {
+  // QA pode ter ciclos de espera de 10 min cada → até 50 turnos
+  for (let turn = 0; turn < 50; turn++) {
     const response = await anthropic.messages.create({
       model,
       max_tokens: 8192,
@@ -555,7 +555,7 @@ async function runQaAgent(
     throw new Error(`stop_reason inesperado: ${response.stop_reason}`);
   }
 
-  throw new Error('Agente QA excedeu o limite de 25 turnos sem concluir a revisão');
+  throw new Error('Agente QA excedeu o limite de 50 turnos sem concluir a revisão');
 }
 
 // ─── Processador do job QA ────────────────────────────────────────────────────
