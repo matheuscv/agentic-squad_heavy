@@ -287,17 +287,17 @@ async function runQaAgent(
     },
   ];
 
-  jobLog.debug({ model }, 'iniciando loop de tool-use QA com Claude');
+  jobLog.info({ model }, 'iniciando loop de tool-use QA com Claude');
 
   // QA pode ter ciclos de espera de 10 min cada → até 60 turnos
   for (let turn = 0; turn < 60; turn++) {
     const response = await anthropic.messages.create({
       model,
       max_tokens: 8192,
-      system: QA_SYSTEM_PROMPT,
+      system: [{ type: 'text', text: QA_SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
       tools: QA_TOOLS,
       messages,
-    });
+    } as Parameters<typeof anthropic.messages.create>[0]);
 
     jobLog.debug(
       { turn, stop_reason: response.stop_reason, usage: response.usage },
@@ -325,14 +325,21 @@ async function runQaAgent(
             const { branch } = block.input as { branch: string };
             const run = await getLatestWorkflowRun(branch);
             const coverageRaw = await readFile('.qa-coverage.json', branch);
-            const coverage = coverageRaw ? JSON.parse(coverageRaw) : null;
+            const coverageParsed = coverageRaw ? JSON.parse(coverageRaw) : null;
+            // Envia apenas o resumo total — dados por arquivo podem ter centenas de linhas
+            const coverage = coverageParsed?.total ? { total: coverageParsed.total } : coverageParsed;
             result = JSON.stringify({ run, coverage });
             jobLog.debug({ branch, runId: run?.runId, conclusion: run?.conclusion }, 'workflow run obtido');
 
           } else if (block.name === 'read_github_file') {
             const { file_path, branch } = block.input as { file_path: string; branch?: string };
             const content = await readFile(file_path, branch ?? devBranch);
-            result = content ?? '(arquivo não encontrado)';
+            const MAX_FILE_CHARS = 4_000;
+            if (content && content.length > MAX_FILE_CHARS) {
+              result = content.slice(0, MAX_FILE_CHARS) + `\n\n[... truncado — ${content.length - MAX_FILE_CHARS} chars omitidos para economizar tokens ...]`;
+            } else {
+              result = content ?? '(arquivo não encontrado)';
+            }
 
           } else if (block.name === 'list_github_directory') {
             const { dir_path, branch } = block.input as { dir_path: string; branch?: string };
