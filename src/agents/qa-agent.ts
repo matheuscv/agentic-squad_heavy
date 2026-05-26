@@ -21,6 +21,27 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// Chama a API Anthropic com retry automático em rate limit (429).
+async function callClaudeWithRetry(
+  create: () => Promise<Anthropic.Message>,
+  onRateLimit: (attempt: number, waitMs: number) => void,
+): Promise<Anthropic.Message> {
+  for (let attempt = 0; attempt < 4; attempt++) {
+    try {
+      return await create();
+    } catch (err: unknown) {
+      if ((err as { status?: number }).status === 429 && attempt < 3) {
+        const waitMs = 65_000 * (attempt + 1);
+        onRateLimit(attempt + 1, waitMs);
+        await sleep(waitMs);
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw new Error('unreachable');
+}
+
 // Substitui o conteúdo de tool_results antigos por placeholder para evitar explosão de contexto.
 // Mantém intactos os últimos keepLastTurns turnos (cada turno = 1 assistant + 1 user).
 function pruneOldToolResults(messages: Anthropic.MessageParam[], keepLastTurns: number = 5): void {
@@ -308,16 +329,16 @@ async function runQaAgent(
 
   jobLog.info({ model }, 'iniciando loop de tool-use QA com Claude');
 
+  let lastInputTokens = 8_000;
+
   // QA pode ter ciclos de espera de 10 min cada → até 50 turnos
   for (let turn = 0; turn < 50; turn++) {
-    await waitForAnthropicCapacity(redisConnection);
-    const response = await anthropic.messages.create({
-      model,
-      max_tokens: 8192,
-      system: QA_SYSTEM_PROMPT,
-      tools: QA_TOOLS,
-      messages,
-    });
+    await waitForAnthropicCapacity(redisConnection, lastInputTokens);
+    const response = await callClaudeWithRetry(
+      () => anthropic.messages.create({ model, max_tokens: 8192, system: QA_SYSTEM_PROMPT, tools: QA_TOOLS, messages }),
+      (attempt, waitMs) => jobLog.warn({ turn, attempt, waitMs }, 'rate limit 429 — aguardando janela de tokens'),
+    );
+    lastInputTokens = response.usage.input_tokens;
 
     jobLog.debug(
       { turn, stop_reason: response.stop_reason, usage: response.usage },
