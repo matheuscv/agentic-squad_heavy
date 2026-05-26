@@ -1,29 +1,39 @@
 # Pedido de Correção — Iteração 1/3
 ## Problema detectado
-O CI está falhando no branch agent/task-scrum-16 (run #26460479470, conclusion: failure). A cobertura está criticamente abaixo de 85%: statements 46.17%, lines 46.17%, functions 54.83%, branches 64.33%.
+O CI está falhando (conclusion: 'failure') no branch agent/task-scrum-16. A causa raiz provável são asserções de locale frágeis no arquivo `src/utils/currency-extended.test.ts`, que verificam strings formatadas específicas de locale (como 'R$', ',99', '0,00', '9,999.99', '0.00', ',50', '€') usando `toContain()`. Em ambientes de CI, o locale do sistema pode diferir do esperado (pt-BR, en-US, de-DE), causando falhas nas asserções de formatação exata. 
 
-A implementação do módulo `src/utils/currency.ts` (formatCurrency) parece correta e possui testes unitários em `src/utils/currency.test.ts`. Entretanto, o CI falhou — é necessário investigar e corrigir a causa raiz da falha. Possíveis problemas:
-1. Erro de compilação TypeScript (tipo CurrencyCode sendo usado de forma incorreta, ou importação com problema)
-2. Falha de build ou de configuração do Vitest
-3. Algum teste existente nos arquivos de integração (dev-agent.integration.test.ts, orchestrator.integration.test.ts, qa-correction-loop.integration.test.ts) quebrou por incompatibilidade com o código novo
-4. O arquivo `src/utils/currency.ts` pode conter um erro que faz o branch de validação `!(currency in CURRENCY_LOCALE_MAP)` nunca ser atingido com TypeScript strict (pois o tipo CurrencyCode já garante que apenas valores válidos são aceitos, mas o branch guard throw nunca é executado nos testes)
+As asserções problemáticas incluem:
+- `expect(result).toContain('R$')` — símbolo pode incluir espaço não-breaking
+- `expect(result).toContain(',99')` — depende do locale pt-BR estar ativo no sistema
+- `expect(result).toContain('0,00')` — idem
+- `expect(result).toContain('9,999.99')` — depende do locale en-US
+- `expect(result).toContain('0.00')` — idem
+- `expect(result).toContain(',50')` — depende do locale de-DE
 
-Por favor, verifique e corrija a causa raiz da falha do CI. Garanta que todos os testes passem e que o módulo currency.ts esteja corretamente implementado.
+A correção deve:
+1. Substituir asserções de string exatas por verificações mais robustas usando regex ou verificar apenas o tipo de retorno (string não-vazia)
+2. Alternativamente, usar `Intl.NumberFormat` no próprio teste para gerar o valor esperado dinamicamente
+3. Garantir que os testes não dependam do locale do sistema operacional do CI
+4. Manter a semântica dos testes (validar que BRL/USD/EUR são formatados corretamente)
 ## Arquivos com problemas
-- `src/utils/currency.ts`
-- `src/utils/currency.test.ts`
+- `src/utils/currency-extended.test.ts`
 ## Testes falhando
-- src/utils/currency.test.ts
+- formatCurrency — cobertura estendida > BRL — Real Brasileiro (locale pt-BR) > formata valor com centavos
+- formatCurrency — cobertura estendida > BRL — Real Brasileiro (locale pt-BR) > formata valor zero
+- formatCurrency — cobertura estendida > USD — Dólar Americano (locale en-US) > formata valor positivo simples
+- formatCurrency — cobertura estendida > USD — Dólar Americano (locale en-US) > formata valor zero
+- formatCurrency — cobertura estendida > USD — Dólar Americano (locale en-US) > formata valor pequeno fracional
+- formatCurrency — cobertura estendida > EUR — Euro (locale de-DE) > formata valor zero
+- formatCurrency — cobertura estendida > EUR — Euro (locale de-DE) > usa vírgula como separador decimal (locale de-DE)
 ## Cobertura insuficiente
 ```json
 {
   "src/utils/currency.ts": {
-    "statements": 46.17,
-    "branches": 64.33,
-    "functions": 54.83,
-    "lines": 46.17
+    "statements": 80.07,
+    "branches": 75.76,
+    "lines": 80.07
   }
 }
 ```
 ---
-_Gerado pelo Agente QA em 2026-05-26T17:27:56.207Z_
+_Gerado pelo Agente QA em 2026-05-26T21:02:35.831Z_
