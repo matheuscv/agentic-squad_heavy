@@ -1,0 +1,170 @@
+# Workflow de CI para branches geradas pelo Agente DEV.
+#
+# Configuração obrigatória no GitHub (Branch Protection → master):
+#   1. Settings → Branches → Add rule → Branch name pattern: master
+#   2. ✅ Require status checks to pass before merging
+#   3. Status check obrigatório: "Lint · Typecheck · Build · Test · Coverage"
+#   4. ✅ Require branches to be up to date before merging
+#   5. ✅ Do not allow bypassing the above settings
+
+name: Agent DEV — CI
+
+on:
+  push:
+    branches:
+      - 'dev/**'      # branches do Agente DEV (dev/scrum-15, dev/scrum-16, ...)
+      - 'agent/**'    # branches task-level futuras (agent/task-01, ...)
+  pull_request:
+    branches:
+      - master
+      - main
+
+# Cancela execuções anteriores do mesmo branch quando há novo push
+concurrency:
+  group: agent-dev-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write   # necessário para postar comentário de cobertura no PR
+  checks: write
+
+jobs:
+  quality-gate:
+    # Este é o nome exato que deve ser configurado como status check obrigatório
+    name: Lint · Typecheck · Build · Test · Coverage
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Instalar dependências
+        run: npm ci
+
+      # ── Quality gates ─────────────────────────────────────────────────────────
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+      - name: Testes com cobertura
+        run: npm run test:coverage
+
+      # ── Artefato de cobertura ─────────────────────────────────────────────────
+
+      - name: Upload relatório de cobertura
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ github.run_id }}
+          path: coverage/
+          retention-days: 14
+
+      # ── Resumo no job summary ─────────────────────────────────────────────────
+
+      - name: Resumo de cobertura no job summary
+        if: always()
+        run: |
+          node --input-type=module << 'EOF'
+          import { readFileSync, existsSync } from 'fs';
+          import { appendFileSync } from 'fs';
+
+          const summaryPath = 'coverage/coverage-summary.json';
+          const out = process.env.GITHUB_STEP_SUMMARY;
+
+          if (!existsSync(summaryPath)) {
+            appendFileSync(out, '## Cobertura\n\n_coverage-summary.json não encontrado_\n');
+            process.exit(0);
+          }
+
+          const { total } = JSON.parse(readFileSync(summaryPath, 'utf8'));
+          const pct = (k) => `${total[k]?.pct ?? 'N/A'}%`;
+          const icon = (k, min = 80) => (total[k]?.pct ?? 0) >= min ? '✅' : '❌';
+
+          const lines = [
+            '## 📊 Cobertura de Testes',
+            '',
+            '| Métrica | Cobertura | Mínimo |',
+            '|---------|-----------|--------|',
+            `| Statements | ${pct('statements')} | ${icon('statements')} ≥ 80% |`,
+            `| Branches   | ${pct('branches')}   | ${icon('branches', 70)} ≥ 70% |`,
+            `| Functions  | ${pct('functions')}  | ${icon('functions')} ≥ 80% |`,
+            `| Lines      | ${pct('lines')}      | ${icon('lines')} ≥ 80% |`,
+            '',
+          ].join('\n');
+
+          appendFileSync(out, lines);
+          EOF
+
+      # ── Comentário de cobertura no PR ─────────────────────────────────────────
+
+      - name: Comentar cobertura no PR
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = 'coverage/coverage-summary.json';
+
+            if (!fs.existsSync(path)) {
+              console.log('coverage-summary.json não encontrado — pulando comentário');
+              return;
+            }
+
+            const { total } = JSON.parse(fs.readFileSync(path, 'utf8'));
+            const pct  = (k) => `${total[k]?.pct ?? 'N/A'}%`;
+            const icon = (k, min = 80) => (total[k]?.pct ?? 0) >= min ? '✅' : '❌';
+            const sha  = context.payload.pull_request.head.sha.slice(0, 7);
+
+            const body = [
+              '## 📊 Cobertura de Testes — Agent DEV CI',
+              '',
+              `| Métrica | Cobertura | Status |`,
+              `|---------|-----------|--------|`,
+              `| Statements | ${pct('statements')} | ${icon('statements')} |`,
+              `| Branches   | ${pct('branches')}   | ${icon('branches', 70)} |`,
+              `| Functions  | ${pct('functions')}  | ${icon('functions')} |`,
+              `| Lines      | ${pct('lines')}      | ${icon('lines')} |`,
+              '',
+              `_Commit: \`${sha}\` · [Ver relatório completo](../actions/runs/${{ github.run_id }})_`,
+              '',
+              '<!-- agent-dev-coverage-comment -->',
+            ].join('\n');
+
+            // Atualiza comentário existente ou cria novo (evita flood de comentários)
+            const marker = '<!-- agent-dev-coverage-comment -->';
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo:  context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+            });
+
+            const existing = comments.find((c) => c.body?.includes(marker));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner:      context.repo.owner,
+                repo:       context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner:        context.repo.owner,
+                repo:         context.repo.repo,
+                issue_number: context.payload.pull_request.number,
+                body,
+              });
+            }
