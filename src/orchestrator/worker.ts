@@ -1,4 +1,5 @@
 import { Worker, type Job } from 'bullmq';
+import { and, eq, inArray } from 'drizzle-orm';
 import { db, schema } from '../db/index';
 import { upsertStory } from '../db/stories';
 import { redisConnection, type OrchestratorJobData } from '../queue/index';
@@ -112,7 +113,28 @@ async function dispatchAgent(
     }
   }
 
-  // 2. Registra run pendente no banco e obtém ID para rastreamento
+  // 2. Deduplicação — ignora se já existe job ativo do mesmo agente para esta story
+  const activeRuns = await db
+    .select({ id: schema.agentRuns.id })
+    .from(schema.agentRuns)
+    .where(
+      and(
+        eq(schema.agentRuns.storyId, storyId),
+        eq(schema.agentRuns.agentType, agent as typeof schema.agentRuns.$inferInsert['agentType']),
+        inArray(schema.agentRuns.status, ['pending', 'running']),
+      ),
+    )
+    .limit(1);
+
+  if (activeRuns.length > 0) {
+    log.warn(
+      { jiraKey, agent, existingRunId: activeRuns[0]!.id },
+      'agente já ativo para esta story — enfileiramento ignorado',
+    );
+    return;
+  }
+
+  // 3. Registra run pendente no banco e obtém ID para rastreamento
   const [agentRun] = await db
     .insert(schema.agentRuns)
     .values({
@@ -126,7 +148,7 @@ async function dispatchAgent(
   const agentRunId = agentRun!.id;
   log.info({ jiraKey, agent, agentRunId }, 'run pendente registrado');
 
-  // 3. Enfileira na fila do agente correspondente
+  // 4. Enfileira na fila do agente correspondente
   switch (agent) {
     case 'po':
       await poAgentQueue.add(

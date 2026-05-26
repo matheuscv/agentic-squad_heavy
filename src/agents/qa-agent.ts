@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { Queue, Worker, type Job } from 'bullmq';
-import { eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { db, schema } from '../db/index';
 import { updateStoryStatus } from '../db/stories';
 import { redisConnection } from '../queue/index';
@@ -431,35 +431,55 @@ async function runQaAgent(
               devBranch,
             );
 
-            // 2. Registra agentRun pendente para o DEV correction
-            const [corrRun] = await db
-              .insert(schema.agentRuns)
-              .values({
-                storyId,
-                agentType: 'dev',
-                status: 'pending',
-                input: { jiraKey, correctionMode: true, iteration },
-              })
-              .returning({ id: schema.agentRuns.id });
+            // 2. Deduplicação — reutiliza DEV correction já ativo para esta story
+            const activeDevRuns = await db
+              .select({ id: schema.agentRuns.id })
+              .from(schema.agentRuns)
+              .where(
+                and(
+                  eq(schema.agentRuns.storyId, storyId),
+                  eq(schema.agentRuns.agentType, 'dev'),
+                  inArray(schema.agentRuns.status, ['pending', 'running']),
+                ),
+              )
+              .limit(1);
 
-            const correctionRunId = corrRun!.id;
+            let correctionRunId: string;
 
-            // 3. Enfileira job DEV no modo correção
-            await devAgentQueue.add(
-              'dev:correction',
-              {
-                storyId,
-                jiraKey,
-                agentRunId: correctionRunId,
-                summary,
-                fromStatus: 'Em QA',
-                correctionMode: true,
-                correctionIteration: iteration,
-              },
-              { jobId: `dev-correction-${jiraKey}-${correctionRunId}` },
-            );
+            if (activeDevRuns.length > 0) {
+              correctionRunId = activeDevRuns[0]!.id;
+              jobLog.warn({ correctionRunId, iteration }, 'DEV correction já ativo — reutilizando agentRunId existente');
+            } else {
+              // 3. Registra agentRun pendente para o DEV correction
+              const [corrRun] = await db
+                .insert(schema.agentRuns)
+                .values({
+                  storyId,
+                  agentType: 'dev',
+                  status: 'pending',
+                  input: { jiraKey, correctionMode: true, iteration },
+                })
+                .returning({ id: schema.agentRuns.id });
 
-            // 4. Comenta no Jira
+              correctionRunId = corrRun!.id;
+
+              // 4. Enfileira job DEV no modo correção
+              await devAgentQueue.add(
+                'dev:correction',
+                {
+                  storyId,
+                  jiraKey,
+                  agentRunId: correctionRunId,
+                  summary,
+                  fromStatus: 'Em QA',
+                  correctionMode: true,
+                  correctionIteration: iteration,
+                },
+                { jobId: `dev-correction-${jiraKey}-${correctionRunId}` },
+              );
+            }
+
+            // 5. Comenta no Jira
             try {
               await addComment(
                 jiraKey,
