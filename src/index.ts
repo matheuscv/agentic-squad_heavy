@@ -12,6 +12,7 @@ import jiraWebhookRouter from './webhooks/jira';
 import { createOrchestratorWorker, createReconciler } from './orchestrator';
 import { createPoAgentWorker } from './agents/po';
 import { createLtAgentWorker } from './agents/lt';
+import { createDevAgentWorker } from './agents/dev';
 import { logger } from './lib/logger';
 
 const app = express();
@@ -82,6 +83,7 @@ app.get('/health', async (_req: Request, res: Response) => {
 const orchestratorWorker = createOrchestratorWorker();
 const poAgentWorker = createPoAgentWorker();
 const ltAgentWorker = createLtAgentWorker();
+const devAgentWorker = createDevAgentWorker();
 const reconcilerInterval = createReconciler();
 
 const server = app.listen(port, () => {
@@ -100,6 +102,7 @@ const shutdown = async (signal: string) => {
       orchestratorWorker.close(),
       poAgentWorker.close(),
       ltAgentWorker.close(),
+      devAgentWorker.close(),
     ]);
     logger.info('servidor encerrado com sucesso');
     process.exit(0);

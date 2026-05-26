@@ -7,6 +7,18 @@ export type CommitResult = {
   url: string;
 };
 
+export type DirectoryEntry = {
+  name: string;
+  type: 'file' | 'dir';
+  path: string;
+};
+
+export type PullRequestResult = {
+  number: number;
+  url: string;
+  html_url: string;
+};
+
 // ─── Autenticação GitHub App via JWT + Installation Token ─────────────────────
 //
 // @octokit/app v15 é ESM-only, incompatível com o output CommonJS deste projeto.
@@ -202,4 +214,55 @@ export async function commitFile(
     sha: result.commit.sha,
     url: result.commit.html_url ?? '',
   };
+}
+
+/**
+ * Lista arquivos e subdiretórios em um caminho do repositório.
+ * Retorna array vazio se o caminho não existir (404) ou não for diretório.
+ */
+export async function listDirectory(dirPath: string, branch?: string): Promise<DirectoryEntry[]> {
+  const token = await getInstallationToken();
+  const { owner, repo } = getRepoCoords();
+
+  try {
+    const query = branch ? `?ref=${encodeURIComponent(branch)}` : '';
+    const data = await githubFetch<unknown>(
+      `/repos/${owner}/${repo}/contents/${dirPath}${query}`,
+      token,
+    );
+    if (!Array.isArray(data)) return [];
+    return (data as Array<{ name: string; type: string; path: string }>)
+      .filter((item) => item.type === 'file' || item.type === 'dir')
+      .map((item) => ({ name: item.name, type: item.type as 'file' | 'dir', path: item.path }));
+  } catch (err) {
+    if ((err as Error).message.includes('404')) return [];
+    throw err;
+  }
+}
+
+/**
+ * Cria um Pull Request do branch de desenvolvimento para o branch padrão (ou base especificado).
+ * Lança erro se o PR já existir (422) — idempotência deve ser tratada pelo caller.
+ */
+export async function createPullRequest(
+  title: string,
+  body: string,
+  headBranch: string,
+  baseBranch?: string,
+): Promise<PullRequestResult> {
+  const token = await getInstallationToken();
+  const { owner, repo } = getRepoCoords();
+
+  const base = baseBranch ?? (await getDefaultBranchSha(token)).branch;
+
+  const result = await githubFetch<{ number: number; url: string; html_url: string }>(
+    `/repos/${owner}/${repo}/pulls`,
+    token,
+    {
+      method: 'POST',
+      body: JSON.stringify({ title, body, head: headBranch, base, draft: false }),
+    },
+  );
+
+  return { number: result.number, url: result.url, html_url: result.html_url };
 }
