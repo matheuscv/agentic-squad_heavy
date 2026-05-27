@@ -132,6 +132,12 @@ export async function runAgentLoop<T>(opts: RunAgentLoopOptions<T>): Promise<T> 
       return onEndTurn(response);
     }
 
+    if (response.stop_reason === 'max_tokens') {
+      log.warn({ turn, usage: response.usage }, 'max_tokens atingido — solicitando continuação');
+      messages.push({ role: 'user', content: 'Sua resposta foi cortada pelo limite de tokens. Continue de onde parou, priorizando as ações mais críticas.' });
+      continue;
+    }
+
     if (response.stop_reason === 'tool_use') {
       const toolResults: Anthropic.ToolResultBlockParam[] = [];
 

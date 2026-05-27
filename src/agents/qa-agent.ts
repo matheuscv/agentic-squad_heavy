@@ -546,6 +546,7 @@ async function runQaAgent(
     tools: QA_TOOLS,
     messages,
     maxTurns: 100,
+    maxTokens: 16_384,
     log: jobLog,
     label: 'QA',
     maxToolResultChars: 4_000,
