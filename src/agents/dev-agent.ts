@@ -251,7 +251,7 @@ Lembre-se:
     system: DEV_SYSTEM_PROMPT,
     tools: DEV_TOOLS,
     messages,
-    maxTurns: 40,
+    maxTurns: correctionMode ? 60 : 40,
     log: jobLog,
     label: 'DEV',
     dispatchTool,
