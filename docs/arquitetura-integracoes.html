@@ -1,0 +1,1250 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Squad 100% Agêntica — Arquitetura de Integrações</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:        #05091a;
+    --bg2:       #080e22;
+    --bg3:       #0b1530;
+    --card:      rgba(11,21,48,0.85);
+    --border:    rgba(255,255,255,0.07);
+    --border2:   rgba(255,255,255,0.12);
+    --blue:      #3b82f6;
+    --blue-dim:  rgba(59,130,246,0.15);
+    --cyan:      #22d3ee;
+    --purple:    #a78bfa;
+    --green:     #34d399;
+    --amber:     #fbbf24;
+    --rose:      #f87171;
+    --text:      #e2e8f0;
+    --text2:     #94a3b8;
+    --text3:     #475569;
+    --text4:     #334155;
+  }
+
+  *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+  html { scroll-behavior:smooth; }
+
+  body {
+    font-family:'Inter', -apple-system, sans-serif;
+    background:var(--bg);
+    color:var(--text);
+    min-height:100vh;
+    overflow-x:hidden;
+    print-color-adjust:exact;
+    -webkit-print-color-adjust:exact;
+  }
+
+  /* ── Background glow ── */
+  body::before {
+    content:'';
+    position:fixed; inset:0; pointer-events:none; z-index:0;
+    background:
+      radial-gradient(ellipse 90% 55% at 50% -5%, rgba(59,130,246,0.13) 0%, transparent 65%),
+      radial-gradient(ellipse 55% 45% at 85% 90%, rgba(167,139,250,0.08) 0%, transparent 55%),
+      radial-gradient(ellipse 55% 45% at 15% 80%, rgba(34,211,238,0.07) 0%, transparent 55%);
+  }
+
+  /* ── HEADER ── */
+  .header {
+    position:relative; z-index:1;
+    padding:52px 72px 44px;
+    border-bottom:1px solid var(--border);
+    display:flex; align-items:flex-start; justify-content:space-between; gap:48px;
+  }
+
+  .header-left { flex:1; min-width:0; }
+
+  .badge {
+    display:inline-flex; align-items:center; gap:8px;
+    background:rgba(59,130,246,0.1); border:1px solid rgba(59,130,246,0.25);
+    color:var(--blue); padding:5px 14px; border-radius:20px;
+    font-size:11.5px; font-weight:600; letter-spacing:.06em; text-transform:uppercase;
+    margin-bottom:22px;
+  }
+  .badge-dot {
+    width:6px; height:6px; background:var(--blue); border-radius:50%;
+    animation:bdot 2.2s ease-in-out infinite;
+  }
+  @keyframes bdot { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.4;transform:scale(.65)} }
+
+  h1 {
+    font-family:'Space Grotesk', sans-serif;
+    font-size:40px; font-weight:700; line-height:1.14; margin-bottom:14px;
+    background:linear-gradient(130deg, #e2e8f0 0%, #94a3b8 55%, #60a5fa 100%);
+    -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;
+  }
+
+  .subtitle {
+    font-size:16px; color:var(--text2); line-height:1.65; max-width:580px; font-weight:400;
+  }
+
+  .header-meta {
+    display:flex; gap:32px; margin-top:28px;
+  }
+  .meta-item { display:flex; flex-direction:column; gap:3px; }
+  .meta-label {
+    font-size:10.5px; text-transform:uppercase; letter-spacing:.08em;
+    color:var(--text3); font-weight:600;
+  }
+  .meta-value { font-size:13.5px; color:var(--text2); font-weight:500; }
+
+  /* Stats cluster */
+  .stats-cluster {
+    display:grid; grid-template-columns:repeat(2,1fr); gap:10px; flex-shrink:0;
+  }
+  .stat-card {
+    background:var(--card); border:1px solid var(--border);
+    border-radius:12px; padding:16px 22px; text-align:center; min-width:110px;
+  }
+  .stat-n {
+    font-family:'Space Grotesk', sans-serif;
+    font-size:30px; font-weight:700; color:var(--blue); line-height:1; margin-bottom:4px;
+  }
+  .stat-l {
+    font-size:10.5px; color:var(--text3); text-transform:uppercase;
+    letter-spacing:.05em; font-weight:600;
+  }
+
+  /* ── CONTENT WRAPPER ── */
+  .content {
+    position:relative; z-index:1;
+    padding:0 72px 72px;
+  }
+
+  /* ── SECTION ── */
+  .section { margin-top:56px; }
+  .section-header {
+    display:flex; align-items:center; gap:12px; margin-bottom:28px;
+  }
+  .section-line {
+    width:34px; height:3px;
+    background:linear-gradient(90deg,var(--blue),var(--cyan));
+    border-radius:2px; flex-shrink:0;
+  }
+  .section-title {
+    font-family:'Space Grotesk', sans-serif;
+    font-size:20px; font-weight:600; color:var(--text);
+  }
+  .section-note {
+    margin-left:auto; font-size:11px; color:var(--text3);
+    text-transform:uppercase; letter-spacing:.08em; font-weight:600; flex-shrink:0;
+  }
+
+  /* ── DIAGRAM WRAPPER ── */
+  .diagram-wrap {
+    background:var(--card); border:1px solid var(--border);
+    border-radius:20px; overflow:hidden; position:relative;
+  }
+  .diagram-wrap::before {
+    content:''; position:absolute; inset:0; pointer-events:none;
+    background:
+      repeating-linear-gradient(0deg, transparent, transparent 39px,
+        rgba(255,255,255,0.018) 39px, rgba(255,255,255,0.018) 40px),
+      repeating-linear-gradient(90deg, transparent, transparent 39px,
+        rgba(255,255,255,0.018) 39px, rgba(255,255,255,0.018) 40px);
+  }
+  .diagram-wrap svg { width:100%; height:auto; display:block; }
+
+  /* SVG animations */
+  @keyframes flow   { from{stroke-dashoffset:240} to{stroke-dashoffset:0} }
+  @keyframes rflow  { from{stroke-dashoffset:0}   to{stroke-dashoffset:240} }
+  .anim-flow        { animation:flow  3.2s linear infinite; }
+  .anim-rflow       { animation:rflow 3.2s linear infinite; }
+  .anim-flow-slow   { animation:flow  5s   linear infinite; }
+  .anim-flow-med    { animation:flow  4s   linear infinite; }
+  .anim-rflow-med   { animation:rflow 4s   linear infinite; }
+
+  /* ── INTEGRATION CARDS ── */
+  .cards-grid {
+    display:grid; grid-template-columns:repeat(4,1fr); gap:14px;
+  }
+  .icard {
+    background:var(--card); border:1px solid var(--border);
+    border-radius:14px; padding:20px; position:relative; overflow:hidden;
+    transition:border-color .2s, transform .2s, box-shadow .2s;
+  }
+  .icard::before {
+    content:''; position:absolute; top:0; left:0; right:0; height:2px;
+    background:var(--stripe, var(--blue)); opacity:.7;
+  }
+  .icard:hover {
+    border-color:var(--border2); transform:translateY(-2px);
+    box-shadow:0 14px 48px rgba(0,0,0,.35);
+  }
+  .icard-head {
+    display:flex; align-items:center; gap:11px; margin-bottom:12px;
+  }
+  .icard-icon {
+    width:36px; height:36px; border-radius:9px;
+    display:flex; align-items:center; justify-content:center;
+    font-size:17px; flex-shrink:0; font-weight:700; letter-spacing:-.5px;
+    font-family:'Space Grotesk', sans-serif;
+  }
+  .icard-name {
+    font-size:13.5px; font-weight:700; color:var(--text);
+    font-family:'Space Grotesk', sans-serif; line-height:1.2;
+  }
+  .icard-cat {
+    font-size:10px; color:var(--text3);
+    text-transform:uppercase; letter-spacing:.06em; font-weight:600; margin-top:1px;
+  }
+  .icard-desc {
+    font-size:12px; color:var(--text2); line-height:1.65; margin-bottom:13px;
+  }
+  .icard-tags { display:flex; flex-wrap:wrap; gap:5px; }
+  .tag {
+    font-size:10px; font-weight:500; color:var(--text3);
+    background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.07);
+    padding:2.5px 7px; border-radius:4px;
+  }
+
+  /* ── DATA FLOW STEPS ── */
+  .flow-grid {
+    display:grid; grid-template-columns:repeat(3,1fr); gap:14px;
+  }
+  .fstep {
+    background:var(--card); border:1px solid var(--border);
+    border-radius:14px; padding:20px; position:relative; overflow:hidden;
+  }
+  .fstep-n {
+    font-family:'Space Grotesk', sans-serif;
+    font-size:52px; font-weight:800; color:rgba(255,255,255,.035);
+    position:absolute; top:6px; right:14px; line-height:1; pointer-events:none;
+  }
+  .fstep-title {
+    font-size:12.5px; font-weight:700; color:var(--text);
+    display:flex; align-items:center; gap:8px; margin-bottom:7px;
+  }
+  .fstep-dot { width:7px; height:7px; border-radius:50%; background:var(--blue); flex-shrink:0; }
+  .fstep-desc { font-size:11.5px; color:var(--text2); line-height:1.65; }
+  .fstep-route {
+    display:flex; align-items:center; gap:5px; margin-top:11px; flex-wrap:wrap;
+  }
+  .rc {
+    font-size:10px; font-weight:600; padding:2px 7px; border-radius:4px;
+    background:rgba(59,130,246,.1); border:1px solid rgba(59,130,246,.22); color:var(--blue);
+  }
+  .ra { font-size:10px; color:var(--text4); }
+
+  /* ── AGENT PIPELINE ── */
+  .pipeline {
+    display:grid; grid-template-columns:repeat(5,1fr); gap:0;
+    background:var(--card); border:1px solid var(--border); border-radius:16px;
+    overflow:hidden;
+  }
+  .agent-block {
+    padding:22px 18px; position:relative;
+    border-right:1px solid var(--border);
+  }
+  .agent-block:last-child { border-right:none; }
+  .agent-block::before {
+    content:''; position:absolute; top:0; left:0; right:0; height:3px;
+    background:var(--acolor, var(--blue));
+  }
+  .agent-num {
+    font-family:'Space Grotesk', sans-serif;
+    font-size:10px; font-weight:700; color:var(--text3);
+    text-transform:uppercase; letter-spacing:.1em; margin-bottom:8px;
+  }
+  .agent-name {
+    font-family:'Space Grotesk', sans-serif;
+    font-size:15px; font-weight:700; color:var(--text); margin-bottom:6px;
+  }
+  .agent-role { font-size:11px; color:var(--text2); line-height:1.55; margin-bottom:12px; }
+  .agent-out {
+    font-size:10px; font-weight:600; color:var(--text3);
+    text-transform:uppercase; letter-spacing:.06em; margin-bottom:5px;
+  }
+  .agent-artefact {
+    font-size:11px; font-weight:500; padding:4px 9px; border-radius:5px;
+    display:inline-block; background:rgba(255,255,255,0.04);
+    border:1px solid var(--border); color:var(--text2);
+  }
+  .agent-arrow {
+    position:absolute; right:-1px; top:50%; transform:translateY(-50%);
+    width:14px; height:14px;
+    display:flex; align-items:center; justify-content:center;
+    background:var(--bg); border:1px solid var(--border); border-radius:50%;
+    font-size:9px; color:var(--text3); z-index:2;
+  }
+
+  /* ── INFRA TABLE ── */
+  .infra-table-wrap {
+    background:var(--card); border:1px solid var(--border); border-radius:14px; overflow:hidden;
+  }
+  table { width:100%; border-collapse:collapse; }
+  thead tr { background:rgba(255,255,255,.03); }
+  thead th {
+    padding:13px 20px; text-align:left;
+    font-size:10.5px; font-weight:700; color:var(--text3);
+    text-transform:uppercase; letter-spacing:.08em;
+    border-bottom:1px solid var(--border);
+  }
+  tbody tr { border-bottom:1px solid rgba(255,255,255,.04); transition:background .15s; }
+  tbody tr:last-child { border-bottom:none; }
+  tbody tr:hover { background:rgba(255,255,255,.02); }
+  tbody td {
+    padding:13px 20px; font-size:12.5px; color:var(--text2); vertical-align:middle;
+  }
+  .td-service {
+    display:flex; align-items:center; gap:10px;
+  }
+  .td-dot {
+    width:8px; height:8px; border-radius:50%; flex-shrink:0;
+  }
+  .td-name { font-weight:600; color:var(--text); font-size:13px; }
+  .td-badge {
+    font-size:10px; font-weight:600; padding:2px 8px; border-radius:20px;
+  }
+
+  /* ── FOOTER ── */
+  .footer {
+    position:relative; z-index:1;
+    border-top:1px solid var(--border); padding:28px 72px;
+    display:flex; align-items:center; justify-content:space-between; gap:24px;
+  }
+  .footer-l { display:flex; align-items:center; gap:10px; }
+  .footer-logo {
+    font-family:'Space Grotesk', sans-serif; font-size:13px; font-weight:700; color:var(--text2);
+  }
+  .footer-sep { color:var(--text4); }
+  .footer-copy { font-size:12px; color:var(--text3); }
+  .footer-r { display:flex; align-items:center; gap:20px; }
+  .footer-chip {
+    font-size:10px; font-weight:600; padding:4px 10px; border-radius:20px;
+    border:1px solid var(--border); color:var(--text3); text-transform:uppercase; letter-spacing:.06em;
+  }
+
+  /* ── PAGE TITLE BAR (for print) ── */
+  @media print {
+    body::before { display:none; }
+    .header, .content, .footer { padding-left:40px; padding-right:40px; }
+    .cards-grid { grid-template-columns:repeat(2,1fr); }
+    .flow-grid { grid-template-columns:repeat(2,1fr); }
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════ HEADER ═══════════════════ -->
+<header class="header">
+  <div class="header-left">
+    <div class="badge">
+      <span class="badge-dot"></span>
+      Arquitetura de Integrações · Versão 1.0 · Maio 2026
+    </div>
+    <h1>Squad 100% Agêntica<br>Arquitetura de Integrações</h1>
+    <p class="subtitle">
+      Documento executivo que descreve a topologia de integração entre os oito serviços de
+      infraestrutura que compõem o motor de orquestração agêntico — do disparo via Jira à
+      geração de código com IA e observabilidade em tempo real.
+    </p>
+    <div class="header-meta">
+      <div class="meta-item">
+        <span class="meta-label">Classificação</span>
+        <span class="meta-value">Confidencial Interno</span>
+      </div>
+      <div class="meta-item">
+        <span class="meta-label">Fase Atual</span>
+        <span class="meta-value">Fase 3 — Agentes DEV &amp; QA</span>
+      </div>
+      <div class="meta-item">
+        <span class="meta-label">Stack Principal</span>
+        <span class="meta-value">TypeScript · Node.js · BullMQ</span>
+      </div>
+      <div class="meta-item">
+        <span class="meta-label">Modelo LLM</span>
+        <span class="meta-value">Claude Opus 4 / Sonnet 4</span>
+      </div>
+    </div>
+  </div>
+  <div class="stats-cluster">
+    <div class="stat-card">
+      <div class="stat-n">8</div>
+      <div class="stat-l">Integrações</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-n">5</div>
+      <div class="stat-l">Agentes IA</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-n">13</div>
+      <div class="stat-l">Estados Jira</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-n">5×</div>
+      <div class="stat-l">DEVs Paralelos</div>
+    </div>
+  </div>
+</header>
+
+<!-- ═══════════════════ CONTENT ═══════════════════ -->
+<div class="content">
+
+  <!-- ── Diagrama de Arquitetura ── -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-line"></div>
+      <h2 class="section-title">Diagrama de Arquitetura — Visão Completa</h2>
+      <span class="section-note">Hub-and-Spoke · Render como Orquestrador Central</span>
+    </div>
+
+    <div class="diagram-wrap">
+      <svg viewBox="0 0 1400 800" xmlns="http://www.w3.org/2000/svg" style="min-height:480px">
+        <defs>
+          <!-- Arrow markers -->
+          <marker id="arr-blue"   markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto">
+            <polygon points="0 0,8 3,0 6" fill="#3b82f6" opacity=".9"/>
+          </marker>
+          <marker id="arr-gray"   markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto">
+            <polygon points="0 0,8 3,0 6" fill="#6b7280" opacity=".9"/>
+          </marker>
+          <marker id="arr-green"  markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto">
+            <polygon points="0 0,8 3,0 6" fill="#34d399" opacity=".9"/>
+          </marker>
+          <marker id="arr-teal"   markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto">
+            <polygon points="0 0,8 3,0 6" fill="#2dd4bf" opacity=".9"/>
+          </marker>
+          <marker id="arr-orange" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto">
+            <polygon points="0 0,8 3,0 6" fill="#fb923c" opacity=".9"/>
+          </marker>
+          <marker id="arr-amber"  markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto">
+            <polygon points="0 0,8 3,0 6" fill="#fbbf24" opacity=".9"/>
+          </marker>
+          <marker id="arr-purple" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto">
+            <polygon points="0 0,8 3,0 6" fill="#a78bfa" opacity=".9"/>
+          </marker>
+
+          <!-- Glow filter for hub -->
+          <filter id="glow-blue" x="-30%" y="-30%" width="160%" height="160%">
+            <feGaussianBlur stdDeviation="8" result="blur"/>
+            <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+          <filter id="glow-soft" x="-20%" y="-20%" width="140%" height="140%">
+            <feGaussianBlur stdDeviation="4" result="blur"/>
+            <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+
+          <!-- Gradients per service -->
+          <linearGradient id="grad-render" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%"   stop-color="#1e3a5f"/>
+            <stop offset="100%" stop-color="#0d2040"/>
+          </linearGradient>
+          <linearGradient id="grad-jira" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%"   stop-color="#0f2348"/>
+            <stop offset="100%" stop-color="#061628"/>
+          </linearGradient>
+          <linearGradient id="grad-github" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%"   stop-color="#1a1e2e"/>
+            <stop offset="100%" stop-color="#0f1120"/>
+          </linearGradient>
+          <linearGradient id="grad-supa" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%"   stop-color="#0a2e20"/>
+            <stop offset="100%" stop-color="#051810"/>
+          </linearGradient>
+          <linearGradient id="grad-upstash" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%"   stop-color="#072a24"/>
+            <stop offset="100%" stop-color="#031612"/>
+          </linearGradient>
+          <linearGradient id="grad-anthr" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%"   stop-color="#2e1a0a"/>
+            <stop offset="100%" stop-color="#180d04"/>
+          </linearGradient>
+          <linearGradient id="grad-better" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%"   stop-color="#2d1405"/>
+            <stop offset="100%" stop-color="#180a02"/>
+          </linearGradient>
+          <linearGradient id="grad-uptime" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%"   stop-color="#0a2818"/>
+            <stop offset="100%" stop-color="#051510"/>
+          </linearGradient>
+        </defs>
+
+        <!-- ── Layer background zones ── -->
+        <!-- External Triggers zone -->
+        <rect x="52" y="72" width="1300" height="148" rx="10" fill="rgba(59,130,246,.03)" stroke="rgba(59,130,246,.07)" stroke-width="1"/>
+        <text x="82" y="95" font-family="Inter,sans-serif" font-size="10" font-weight="600" fill="rgba(59,130,246,.45)" letter-spacing="1.5" text-anchor="start">GATILHOS EXTERNOS</text>
+
+        <!-- Core / Render zone -->
+        <rect x="52" y="252" width="1300" height="250" rx="10" fill="rgba(99,102,241,.03)" stroke="rgba(99,102,241,.06)" stroke-width="1"/>
+        <text x="82" y="274" font-family="Inter,sans-serif" font-size="10" font-weight="600" fill="rgba(99,102,241,.45)" letter-spacing="1.5" text-anchor="start">MOTOR DE ORQUESTRAÇÃO</text>
+
+        <!-- Data Layer zone -->
+        <rect x="52" y="570" width="1300" height="168" rx="10" fill="rgba(52,211,153,.03)" stroke="rgba(52,211,153,.06)" stroke-width="1"/>
+        <text x="82" y="592" font-family="Inter,sans-serif" font-size="10" font-weight="600" fill="rgba(52,211,153,.45)" letter-spacing="1.5" text-anchor="start">CAMADA DE DADOS &amp; IA</text>
+
+
+        <!-- ══════════════════════════════════
+             CONNECTION PATHS (drawn first)
+        ══════════════════════════════════ -->
+
+        <!-- Jira → Render (Webhook trigger) -->
+        <path d="M 305,148 C 440,148 520,275 520,318"
+              stroke="#3b82f6" stroke-width="2" fill="none"
+              stroke-dasharray="7 9" marker-end="url(#arr-blue)"
+              class="anim-flow" opacity=".85"/>
+
+        <!-- Render → Jira (REST API status update) -->
+        <path d="M 520,362 C 440,362 305,215 305,190"
+              stroke="#60a5fa" stroke-width="1.5" fill="none"
+              stroke-dasharray="5 8" marker-end="url(#arr-blue)"
+              class="anim-rflow" opacity=".55"/>
+
+        <!-- GitHub → Render (App API / CI results) -->
+        <path d="M 1098,148 C 970,148 882,275 882,318"
+              stroke="#6b7280" stroke-width="2" fill="none"
+              stroke-dasharray="7 9" marker-end="url(#arr-gray)"
+              class="anim-rflow" opacity=".85"/>
+
+        <!-- Render → GitHub (create PR / commit / trigger CI) -->
+        <path d="M 882,362 C 970,362 1098,215 1098,190"
+              stroke="#9ca3af" stroke-width="1.5" fill="none"
+              stroke-dasharray="5 8" marker-end="url(#arr-gray)"
+              class="anim-flow" opacity=".55"/>
+
+        <!-- UptimeRobot → Render (health check) -->
+        <path d="M 228,382 L 522,382"
+              stroke="#34d399" stroke-width="2" fill="none"
+              stroke-dasharray="6 8" marker-end="url(#arr-green)"
+              class="anim-flow-med" opacity=".8"/>
+
+        <!-- Render → Betterstack (structured logs) -->
+        <path d="M 882,378 L 1178,378"
+              stroke="#fb923c" stroke-width="2" fill="none"
+              stroke-dasharray="6 8" marker-end="url(#arr-orange)"
+              class="anim-flow-slow" opacity=".85"/>
+
+        <!-- Render → Supabase (read/write state) -->
+        <path d="M 590,504 C 590,552 218,552 218,574"
+              stroke="#3ecf8e" stroke-width="2" fill="none"
+              stroke-dasharray="7 9" marker-end="url(#arr-teal)"
+              class="anim-flow-med" opacity=".8"/>
+
+        <!-- Render → Upstash (BullMQ job enqueue) -->
+        <path d="M 700,504 L 700,648"
+              stroke="#2dd4bf" stroke-width="2" fill="none"
+              stroke-dasharray="7 9" marker-end="url(#arr-teal)"
+              class="anim-flow" opacity=".85"/>
+
+        <!-- Render → Anthropic (LLM API call) -->
+        <path d="M 812,504 C 812,552 1188,552 1188,574"
+              stroke="#fb923c" stroke-width="2.5" fill="none"
+              stroke-dasharray="8 10" marker-end="url(#arr-amber)"
+              class="anim-flow-med" opacity=".9"/>
+
+        <!-- Anthropic → Render (generated content response) -->
+        <path d="M 1082,638 C 968,638 882,510 882,494"
+              stroke="#fbbf24" stroke-width="1.5" fill="none"
+              stroke-dasharray="5 8" marker-end="url(#arr-amber)"
+              class="anim-rflow-med" opacity=".6"/>
+
+
+        <!-- ══════════════════════════════════
+             EDGE CONNECTION LABELS
+        ══════════════════════════════════ -->
+        <!-- Jira → Render label -->
+        <rect x="362" y="132" width="88" height="18" rx="4" fill="rgba(59,130,246,.12)" stroke="rgba(59,130,246,.2)" stroke-width="1"/>
+        <text x="406" y="145" font-family="Inter,sans-serif" font-size="9.5" font-weight="600" fill="#60a5fa" text-anchor="middle">Webhook POST</text>
+
+        <!-- Render → Jira label -->
+        <rect x="362" y="335" width="80" height="16" rx="4" fill="rgba(96,165,250,.08)" stroke="rgba(96,165,250,.15)" stroke-width="1"/>
+        <text x="402" y="347" font-family="Inter,sans-serif" font-size="9" font-weight="600" fill="#60a5fa" text-anchor="middle" opacity=".7">REST API v3</text>
+
+        <!-- GitHub → Render label -->
+        <rect x="962" y="132" width="80" height="18" rx="4" fill="rgba(107,114,128,.12)" stroke="rgba(107,114,128,.2)" stroke-width="1"/>
+        <text x="1002" y="145" font-family="Inter,sans-serif" font-size="9.5" font-weight="600" fill="#9ca3af" text-anchor="middle">GitHub App</text>
+
+        <!-- Render → GitHub label -->
+        <rect x="960" y="332" width="82" height="16" rx="4" fill="rgba(156,163,175,.08)" stroke="rgba(156,163,175,.15)" stroke-width="1"/>
+        <text x="1001" y="344" font-family="Inter,sans-serif" font-size="9" font-weight="600" fill="#9ca3af" text-anchor="middle" opacity=".7">PR / Commit</text>
+
+        <!-- UptimeRobot → Render label -->
+        <rect x="312" y="365" width="80" height="16" rx="4" fill="rgba(52,211,153,.1)" stroke="rgba(52,211,153,.2)" stroke-width="1"/>
+        <text x="352" y="377" font-family="Inter,sans-serif" font-size="9" font-weight="600" fill="#34d399" text-anchor="middle">/health ping</text>
+
+        <!-- Render → Betterstack label -->
+        <rect x="1012" y="360" width="78" height="16" rx="4" fill="rgba(251,146,60,.1)" stroke="rgba(251,146,60,.2)" stroke-width="1"/>
+        <text x="1051" y="372" font-family="Inter,sans-serif" font-size="9" font-weight="600" fill="#fb923c" text-anchor="middle">JSON Logs</text>
+
+        <!-- Render → Supabase label -->
+        <rect x="498" y="530" width="86" height="16" rx="4" fill="rgba(62,207,142,.1)" stroke="rgba(62,207,142,.2)" stroke-width="1"/>
+        <text x="541" y="542" font-family="Inter,sans-serif" font-size="9" font-weight="600" fill="#3ecf8e" text-anchor="middle">Drizzle ORM</text>
+
+        <!-- Render → Upstash label -->
+        <rect x="660" y="558" width="80" height="16" rx="4" fill="rgba(45,212,191,.1)" stroke="rgba(45,212,191,.2)" stroke-width="1"/>
+        <text x="700" y="570" font-family="Inter,sans-serif" font-size="9" font-weight="600" fill="#2dd4bf" text-anchor="middle">BullMQ Jobs</text>
+
+        <!-- Render → Anthropic label -->
+        <rect x="858" y="530" width="86" height="16" rx="4" fill="rgba(251,191,36,.1)" stroke="rgba(251,191,36,.2)" stroke-width="1"/>
+        <text x="901" y="542" font-family="Inter,sans-serif" font-size="9" font-weight="600" fill="#fbbf24" text-anchor="middle">LLM API Call</text>
+
+        <!-- Anthropic → Render return label -->
+        <rect x="920" y="600" width="76" height="15" rx="4" fill="rgba(251,191,36,.07)" stroke="rgba(251,191,36,.15)" stroke-width="1"/>
+        <text x="958" y="611" font-family="Inter,sans-serif" font-size="9" font-weight="500" fill="#fbbf24" text-anchor="middle" opacity=".7">Response</text>
+
+
+        <!-- ══════════════════════════════════
+             SERVICE NODES
+        ══════════════════════════════════ -->
+
+        <!-- ── JIRA ── -->
+        <g>
+          <rect x="92" y="102" width="213" height="108" rx="13" fill="url(#grad-jira)" stroke="#0052CC" stroke-width="1.5" stroke-opacity=".6" filter="url(#glow-soft)"/>
+          <rect x="92" y="102" width="213" height="3" rx="1.5" fill="#0052CC" opacity=".9"/>
+          <!-- Icon area -->
+          <rect x="112" y="122" width="36" height="36" rx="8" fill="rgba(0,82,204,.25)" stroke="rgba(0,82,204,.4)" stroke-width="1"/>
+          <text x="130" y="147" font-family="'Space Grotesk',sans-serif" font-size="16" font-weight="700" fill="#2684FF" text-anchor="middle">J</text>
+          <!-- Labels -->
+          <text x="158" y="136" font-family="'Space Grotesk',sans-serif" font-size="13.5" font-weight="700" fill="#e2e8f0">Jira Cloud</text>
+          <text x="158" y="152" font-family="Inter,sans-serif" font-size="10" fill="#64748b" font-weight="600" letter-spacing=".04em" text-transform="uppercase">ISSUE TRACKING</text>
+          <text x="112" y="182" font-family="Inter,sans-serif" font-size="10.5" fill="#94a3b8">Board · Webhooks · REST API v3</text>
+          <text x="112" y="198" font-family="Inter,sans-serif" font-size="10.5" fill="#64748b">Máquina de 13 estados</text>
+        </g>
+
+        <!-- ── GITHUB ── -->
+        <g>
+          <rect x="1098" y="102" width="213" height="108" rx="13" fill="url(#grad-github)" stroke="#4b5563" stroke-width="1.5" stroke-opacity=".7" filter="url(#glow-soft)"/>
+          <rect x="1098" y="102" width="213" height="3" rx="1.5" fill="#6b7280" opacity=".9"/>
+          <rect x="1118" y="122" width="36" height="36" rx="8" fill="rgba(107,114,128,.2)" stroke="rgba(107,114,128,.35)" stroke-width="1"/>
+          <text x="1136" y="147" font-family="'Space Grotesk',sans-serif" font-size="13" font-weight="700" fill="#d1d5db" text-anchor="middle">GH</text>
+          <text x="1164" y="136" font-family="'Space Grotesk',sans-serif" font-size="13.5" font-weight="700" fill="#e2e8f0">GitHub</text>
+          <text x="1164" y="152" font-family="Inter,sans-serif" font-size="10" fill="#64748b" font-weight="600" letter-spacing=".04em">CODE · CI/CD</text>
+          <text x="1118" y="182" font-family="Inter,sans-serif" font-size="10.5" fill="#94a3b8">GitHub App · Actions · PRs</text>
+          <text x="1118" y="198" font-family="Inter,sans-serif" font-size="10.5" fill="#64748b">Commits · Coverage Reports</text>
+        </g>
+
+        <!-- ── UPTIMEROBOT ── -->
+        <g>
+          <rect x="38" y="335" width="190" height="94" rx="12" fill="url(#grad-uptime)" stroke="#34d399" stroke-width="1.2" stroke-opacity=".5" filter="url(#glow-soft)"/>
+          <rect x="38" y="335" width="190" height="3" rx="1.5" fill="#34d399" opacity=".8"/>
+          <rect x="56" y="352" width="30" height="30" rx="7" fill="rgba(52,211,153,.18)" stroke="rgba(52,211,153,.35)" stroke-width="1"/>
+          <text x="71" y="373" font-family="'Space Grotesk',sans-serif" font-size="11" font-weight="700" fill="#34d399" text-anchor="middle">UR</text>
+          <text x="96" y="363" font-family="'Space Grotesk',sans-serif" font-size="12" font-weight="700" fill="#e2e8f0">UptimeRobot</text>
+          <text x="96" y="378" font-family="Inter,sans-serif" font-size="9.5" fill="#64748b" font-weight="600" letter-spacing=".04em">MONITORAMENTO</text>
+          <text x="56" y="408" font-family="Inter,sans-serif" font-size="10" fill="#94a3b8">Health checks · Alertas</text>
+          <text x="56" y="422" font-family="Inter,sans-serif" font-size="10" fill="#64748b">30s interval · /health</text>
+        </g>
+
+        <!-- ── BETTERSTACK ── -->
+        <g>
+          <rect x="1175" y="335" width="190" height="94" rx="12" fill="url(#grad-better)" stroke="#fb923c" stroke-width="1.2" stroke-opacity=".5" filter="url(#glow-soft)"/>
+          <rect x="1175" y="335" width="190" height="3" rx="1.5" fill="#fb923c" opacity=".8"/>
+          <rect x="1192" y="352" width="30" height="30" rx="7" fill="rgba(251,146,60,.18)" stroke="rgba(251,146,60,.35)" stroke-width="1"/>
+          <text x="1207" y="373" font-family="'Space Grotesk',sans-serif" font-size="11" font-weight="700" fill="#fb923c" text-anchor="middle">BS</text>
+          <text x="1232" y="363" font-family="'Space Grotesk',sans-serif" font-size="12" font-weight="700" fill="#e2e8f0">Betterstack</text>
+          <text x="1232" y="378" font-family="Inter,sans-serif" font-size="9.5" fill="#64748b" font-weight="600" letter-spacing=".04em">OBSERVABILIDADE</text>
+          <text x="1192" y="408" font-family="Inter,sans-serif" font-size="10" fill="#94a3b8">Logs JSON · Alertas</text>
+          <text x="1192" y="422" font-family="Inter,sans-serif" font-size="10" fill="#64748b">story_id · agent · cost</text>
+        </g>
+
+        <!-- ── RENDER HUB (center, larger) ── -->
+        <g filter="url(#glow-blue)">
+          <rect x="520" y="262" width="362" height="242" rx="16" fill="url(#grad-render)" stroke="#3b82f6" stroke-width="2" stroke-opacity=".6"/>
+          <rect x="520" y="262" width="362" height="4" rx="2" fill="url(#grad-render)" stroke="#3b82f6" stroke-width="0"/>
+          <rect x="520" y="262" width="362" height="4" rx="2">
+            <animate attributeName="fill" values="#3b82f6;#60a5fa;#3b82f6" dur="3s" repeatCount="indefinite"/>
+          </rect>
+          <!-- Inner glow border pulse -->
+          <rect x="520" y="262" width="362" height="242" rx="16" fill="none" stroke="#3b82f6" stroke-width="1" stroke-opacity=".3">
+            <animate attributeName="stroke-opacity" values=".3;.6;.3" dur="2.5s" repeatCount="indefinite"/>
+          </rect>
+
+          <!-- Hub Icon -->
+          <rect x="540" y="282" width="40" height="40" rx="10" fill="rgba(59,130,246,.22)" stroke="rgba(59,130,246,.5)" stroke-width="1.2"/>
+          <text x="560" y="310" font-family="'Space Grotesk',sans-serif" font-size="16" font-weight="700" fill="#60a5fa" text-anchor="middle">R</text>
+
+          <!-- Hub title -->
+          <text x="592" y="298" font-family="'Space Grotesk',sans-serif" font-size="15.5" font-weight="700" fill="#e2e8f0">Render — Motor de Orquestração</text>
+          <text x="592" y="315" font-family="Inter,sans-serif" font-size="10.5" fill="#64748b" font-weight="600" letter-spacing=".05em">WEB SERVICE · NODE.JS · EXPRESS · BULLMQ</text>
+
+          <!-- Divider -->
+          <line x1="540" y1="332" x2="862" y2="332" stroke="rgba(255,255,255,.07)" stroke-width="1"/>
+
+          <!-- Agents row 1 -->
+          <rect x="540" y="344" width="90" height="34" rx="7" fill="rgba(99,102,241,.18)" stroke="rgba(99,102,241,.35)" stroke-width="1"/>
+          <text x="585" y="357" font-family="'Space Grotesk',sans-serif" font-size="9.5" font-weight="700" fill="#a78bfa" text-anchor="middle">ORCHESTRATOR</text>
+          <text x="585" y="370" font-family="Inter,sans-serif" font-size="8.5" fill="#64748b" text-anchor="middle">State Machine</text>
+
+          <rect x="640" y="344" width="68" height="34" rx="7" fill="rgba(59,130,246,.15)" stroke="rgba(59,130,246,.3)" stroke-width="1"/>
+          <text x="674" y="357" font-family="'Space Grotesk',sans-serif" font-size="9.5" font-weight="700" fill="#60a5fa" text-anchor="middle">AGENTE PO</text>
+          <text x="674" y="370" font-family="Inter,sans-serif" font-size="8.5" fill="#64748b" text-anchor="middle">PRD.md</text>
+
+          <rect x="718" y="344" width="68" height="34" rx="7" fill="rgba(34,211,238,.12)" stroke="rgba(34,211,238,.28)" stroke-width="1"/>
+          <text x="752" y="357" font-family="'Space Grotesk',sans-serif" font-size="9.5" font-weight="700" fill="#22d3ee" text-anchor="middle">AGENTE LT</text>
+          <text x="752" y="370" font-family="Inter,sans-serif" font-size="8.5" fill="#64748b" text-anchor="middle">Plano.md</text>
+
+          <!-- Agents row 2 -->
+          <rect x="540" y="388" width="108" height="34" rx="7" fill="rgba(52,211,153,.12)" stroke="rgba(52,211,153,.28)" stroke-width="1"/>
+          <text x="594" y="401" font-family="'Space Grotesk',sans-serif" font-size="9.5" font-weight="700" fill="#34d399" text-anchor="middle">AGENTE DEV ×5</text>
+          <text x="594" y="414" font-family="Inter,sans-serif" font-size="8.5" fill="#64748b" text-anchor="middle">Paralelo · BullMQ</text>
+
+          <rect x="658" y="388" width="88" height="34" rx="7" fill="rgba(251,191,36,.1)" stroke="rgba(251,191,36,.25)" stroke-width="1"/>
+          <text x="702" y="401" font-family="'Space Grotesk',sans-serif" font-size="9.5" font-weight="700" fill="#fbbf24" text-anchor="middle">AGENTE QA</text>
+          <text x="702" y="414" font-family="Inter,sans-serif" font-size="8.5" fill="#64748b" text-anchor="middle">≥85% coverage</text>
+
+          <rect x="756" y="388" width="86" height="34" rx="7" fill="rgba(248,113,113,.1)" stroke="rgba(248,113,113,.22)" stroke-width="1"/>
+          <text x="799" y="401" font-family="'Space Grotesk',sans-serif" font-size="9" font-weight="700" fill="#f87171" text-anchor="middle">Reconciliação</text>
+          <text x="799" y="414" font-family="Inter,sans-serif" font-size="8.5" fill="#64748b" text-anchor="middle">Polling 1-2min</text>
+
+          <!-- Divider row 3 -->
+          <line x1="540" y1="432" x2="862" y2="432" stroke="rgba(255,255,255,.06)" stroke-width="1"/>
+          <text x="540" y="448" font-family="Inter,sans-serif" font-size="9.5" fill="#334155">
+            Webhook Receiver · BullMQ Workers · Rate Limiting · Retry Exponencial · DLQ
+          </text>
+          <text x="540" y="462" font-family="Inter,sans-serif" font-size="9.5" fill="#334155">
+            Graceful Shutdown · /health · /health/detailed · /metrics/cost
+          </text>
+        </g>
+
+        <!-- ── SUPABASE ── -->
+        <g>
+          <rect x="108" y="580" width="218" height="112" rx="13" fill="url(#grad-supa)" stroke="#3ecf8e" stroke-width="1.5" stroke-opacity=".55" filter="url(#glow-soft)"/>
+          <rect x="108" y="580" width="218" height="3" rx="1.5" fill="#3ecf8e" opacity=".85"/>
+          <rect x="128" y="600" width="34" height="34" rx="8" fill="rgba(62,207,142,.2)" stroke="rgba(62,207,142,.4)" stroke-width="1"/>
+          <text x="145" y="623" font-family="'Space Grotesk',sans-serif" font-size="12" font-weight="700" fill="#3ecf8e" text-anchor="middle">SB</text>
+          <text x="172" y="614" font-family="'Space Grotesk',sans-serif" font-size="13" font-weight="700" fill="#e2e8f0">Supabase</text>
+          <text x="172" y="629" font-family="Inter,sans-serif" font-size="9.5" fill="#64748b" font-weight="600" letter-spacing=".04em">POSTGRES · STORAGE</text>
+          <text x="128" y="658" font-family="Inter,sans-serif" font-size="10.5" fill="#94a3b8">stories · agent_runs</text>
+          <text x="128" y="674" font-family="Inter,sans-serif" font-size="10.5" fill="#94a3b8">artifacts · Drizzle ORM</text>
+        </g>
+
+        <!-- ── UPSTASH REDIS ── -->
+        <g>
+          <rect x="596" y="648" width="208" height="104" rx="13" fill="url(#grad-upstash)" stroke="#2dd4bf" stroke-width="1.5" stroke-opacity=".55" filter="url(#glow-soft)"/>
+          <rect x="596" y="648" width="208" height="3" rx="1.5" fill="#2dd4bf" opacity=".85"/>
+          <rect x="614" y="667" width="34" height="34" rx="8" fill="rgba(45,212,191,.18)" stroke="rgba(45,212,191,.38)" stroke-width="1"/>
+          <text x="631" y="690" font-family="'Space Grotesk',sans-serif" font-size="11" font-weight="700" fill="#2dd4bf" text-anchor="middle">UP</text>
+          <text x="658" y="681" font-family="'Space Grotesk',sans-serif" font-size="13" font-weight="700" fill="#e2e8f0">Upstash Redis</text>
+          <text x="658" y="696" font-family="Inter,sans-serif" font-size="9.5" fill="#64748b" font-weight="600" letter-spacing=".04em">BULLMQ · FILA</text>
+          <text x="614" y="722" font-family="Inter,sans-serif" font-size="10.5" fill="#94a3b8">Concurrency=5 · DLQ</text>
+          <text x="614" y="738" font-family="Inter,sans-serif" font-size="10.5" fill="#64748b">Retry · Priority Queue</text>
+        </g>
+
+        <!-- ── ANTHROPIC ── -->
+        <g>
+          <rect x="1080" y="580" width="222" height="112" rx="13" fill="url(#grad-anthr)" stroke="#fb923c" stroke-width="1.5" stroke-opacity=".6" filter="url(#glow-soft)"/>
+          <rect x="1080" y="580" width="222" height="3" rx="1.5" fill="#fb923c" opacity=".85"/>
+          <rect x="1100" y="600" width="34" height="34" rx="8" fill="rgba(251,146,60,.18)" stroke="rgba(251,146,60,.38)" stroke-width="1"/>
+          <text x="1117" y="623" font-family="'Space Grotesk',sans-serif" font-size="11" font-weight="700" fill="#fb923c" text-anchor="middle">AI</text>
+          <text x="1144" y="614" font-family="'Space Grotesk',sans-serif" font-size="13" font-weight="700" fill="#e2e8f0">Anthropic Claude</text>
+          <text x="1144" y="629" font-family="Inter,sans-serif" font-size="9.5" fill="#64748b" font-weight="600" letter-spacing=".04em">LLM · CONSOLE API</text>
+          <text x="1100" y="658" font-family="Inter,sans-serif" font-size="10.5" fill="#94a3b8">Opus 4 (PO/LT/QA/Orch)</text>
+          <text x="1100" y="674" font-family="Inter,sans-serif" font-size="10.5" fill="#64748b">Sonnet 4 (DEV · custo)</text>
+        </g>
+
+        <!-- ── LEGEND ── -->
+        <g transform="translate(520, 758)">
+          <text x="0" y="0" font-family="Inter,sans-serif" font-size="9.5" font-weight="600" fill="#334155" letter-spacing=".06em" text-transform="uppercase">LEGENDA:</text>
+          <!-- Items -->
+          <line x1="68" y1="-4" x2="88" y2="-4" stroke="#3b82f6" stroke-width="2" stroke-dasharray="5 6"/>
+          <text x="92" y="0" font-family="Inter,sans-serif" font-size="9.5" fill="#475569">Disparo / Webhook</text>
+          <line x1="190" y1="-4" x2="210" y2="-4" stroke="#2dd4bf" stroke-width="2" stroke-dasharray="5 6"/>
+          <text x="214" y="0" font-family="Inter,sans-serif" font-size="9.5" fill="#475569">Fila de Jobs</text>
+          <line x1="302" y1="-4" x2="322" y2="-4" stroke="#fbbf24" stroke-width="2.5" stroke-dasharray="6 8"/>
+          <text x="326" y="0" font-family="Inter,sans-serif" font-size="9.5" fill="#475569">Chamada LLM</text>
+          <line x1="424" y1="-4" x2="444" y2="-4" stroke="#fb923c" stroke-width="2" stroke-dasharray="5 6"/>
+          <text x="448" y="0" font-family="Inter,sans-serif" font-size="9.5" fill="#475569">Log / Monitoramento</text>
+          <line x1="588" y1="-4" x2="608" y2="-4" stroke="#3ecf8e" stroke-width="2" stroke-dasharray="5 6"/>
+          <text x="612" y="0" font-family="Inter,sans-serif" font-size="9.5" fill="#475569">Persistência de Estado</text>
+        </g>
+
+      </svg>
+    </div>
+  </div><!-- /section diagrama -->
+
+
+  <!-- ── Integration Cards ── -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-line"></div>
+      <h2 class="section-title">Serviços de Infraestrutura — Detalhamento</h2>
+      <span class="section-note">8 integrações · 3 camadas lógicas</span>
+    </div>
+
+    <div class="cards-grid">
+
+      <!-- Jira -->
+      <div class="icard" style="--stripe:#0052CC">
+        <div class="icard-head">
+          <div class="icard-icon" style="background:rgba(0,82,204,.2);border:1px solid rgba(0,82,204,.35);color:#2684FF">J</div>
+          <div>
+            <div class="icard-name">Jira Cloud</div>
+            <div class="icard-cat">Trigger &amp; State Machine</div>
+          </div>
+        </div>
+        <p class="icard-desc">
+          Âncora do fluxo. Cada transição de card dispara um webhook HTTP que o Render
+          consome. O orquestrador escreve de volta via REST API v3, movendo cards e
+          adicionando comentários com links para artefatos gerados.
+        </p>
+        <div class="icard-tags">
+          <span class="tag">REST API v3</span>
+          <span class="tag">Webhooks HMAC</span>
+          <span class="tag">13 estados</span>
+          <span class="tag">Basic Auth</span>
+        </div>
+      </div>
+
+      <!-- GitHub -->
+      <div class="icard" style="--stripe:#4b5563">
+        <div class="icard-head">
+          <div class="icard-icon" style="background:rgba(75,85,99,.2);border:1px solid rgba(75,85,99,.35);color:#9ca3af;font-size:12px">GH</div>
+          <div>
+            <div class="icard-name">GitHub</div>
+            <div class="icard-cat">VCS · CI/CD</div>
+          </div>
+        </div>
+        <p class="icard-desc">
+          Repositório do código gerado e plataforma de CI. O GitHub App autentica via
+          JWT, permitindo criar commits, abrir PRs e disparar workflows. Os resultados
+          de cobertura do Actions voltam ao Render para análise do Agente QA.
+        </p>
+        <div class="icard-tags">
+          <span class="tag">GitHub App</span>
+          <span class="tag">Actions CI</span>
+          <span class="tag">JWT + Install Token</span>
+          <span class="tag">PR Review</span>
+        </div>
+      </div>
+
+      <!-- Render -->
+      <div class="icard" style="--stripe:#46E3B7">
+        <div class="icard-head">
+          <div class="icard-icon" style="background:rgba(70,227,183,.18);border:1px solid rgba(70,227,183,.35);color:#46E3B7;font-size:13px">R</div>
+          <div>
+            <div class="icard-name">Render</div>
+            <div class="icard-cat">Web Service · Hub Central</div>
+          </div>
+        </div>
+        <p class="icard-desc">
+          Serviço long-running Node.js hospedando o orquestrador, todos os agentes e
+          os workers BullMQ. Sem timeout de serverless — garante execuções de até 15 min
+          por agente DEV. Deploy automático via Git push.
+        </p>
+        <div class="icard-tags">
+          <span class="tag">Express</span>
+          <span class="tag">BullMQ Workers</span>
+          <span class="tag">Auto-deploy</span>
+          <span class="tag">Graceful Shutdown</span>
+        </div>
+      </div>
+
+      <!-- UptimeRobot -->
+      <div class="icard" style="--stripe:#34d399">
+        <div class="icard-head">
+          <div class="icard-icon" style="background:rgba(52,211,153,.18);border:1px solid rgba(52,211,153,.35);color:#34d399;font-size:11px">UR</div>
+          <div>
+            <div class="icard-name">UptimeRobot</div>
+            <div class="icard-cat">Monitoramento de Disponibilidade</div>
+          </div>
+        </div>
+        <p class="icard-desc">
+          Monitora o endpoint <code style="font-size:11px;color:#22d3ee">/health</code> do Render a cada 30 segundos.
+          Dispara alertas imediatos (e-mail/Slack) em caso de downtime, garantindo
+          SLA e visibilidade executiva em tempo real.
+        </p>
+        <div class="icard-tags">
+          <span class="tag">HTTP Monitor</span>
+          <span class="tag">30s interval</span>
+          <span class="tag">Alertas Push</span>
+          <span class="tag">/health endpoint</span>
+        </div>
+      </div>
+
+      <!-- Supabase -->
+      <div class="icard" style="--stripe:#3ecf8e">
+        <div class="icard-head">
+          <div class="icard-icon" style="background:rgba(62,207,142,.18);border:1px solid rgba(62,207,142,.35);color:#3ecf8e;font-size:11px">SB</div>
+          <div>
+            <div class="icard-name">Supabase</div>
+            <div class="icard-cat">PostgreSQL · Storage</div>
+          </div>
+        </div>
+        <p class="icard-desc">
+          Banco relacional centraliza todo estado: histórias, execuções de agentes,
+          artefatos gerados e métricas de custo de tokens. O Supabase Storage persiste
+          PRDs e Planos como blobs acessíveis por link.
+        </p>
+        <div class="icard-tags">
+          <span class="tag">Drizzle ORM</span>
+          <span class="tag">stories table</span>
+          <span class="tag">agent_runs</span>
+          <span class="tag">Migrations</span>
+        </div>
+      </div>
+
+      <!-- Upstash -->
+      <div class="icard" style="--stripe:#2dd4bf">
+        <div class="icard-head">
+          <div class="icard-icon" style="background:rgba(45,212,191,.16);border:1px solid rgba(45,212,191,.33);color:#2dd4bf;font-size:11px">UP</div>
+          <div>
+            <div class="icard-name">Upstash Redis</div>
+            <div class="icard-cat">BullMQ · Fila de Jobs</div>
+          </div>
+        </div>
+        <p class="icard-desc">
+          Backend serverless do BullMQ. Cada evento Jira vira um job enfileirado com
+          retry, prioridade e dead-letter queue. Concorrência de até 5 workers DEV
+          simultâneos sem race conditions.
+        </p>
+        <div class="icard-tags">
+          <span class="tag">BullMQ</span>
+          <span class="tag">Concurrency=5</span>
+          <span class="tag">DLQ</span>
+          <span class="tag">Exponential Backoff</span>
+        </div>
+      </div>
+
+      <!-- Betterstack -->
+      <div class="icard" style="--stripe:#fb923c">
+        <div class="icard-head">
+          <div class="icard-icon" style="background:rgba(251,146,60,.16);border:1px solid rgba(251,146,60,.33);color:#fb923c;font-size:11px">BS</div>
+          <div>
+            <div class="icard-name">Betterstack</div>
+            <div class="icard-cat">Logs · Alertas · Observabilidade</div>
+          </div>
+        </div>
+        <p class="icard-desc">
+          Recebe logs estruturados em JSON contendo <code style="font-size:11px;color:#22d3ee">story_id</code>,
+          <code style="font-size:11px;color:#22d3ee">agent</code>, <code style="font-size:11px;color:#22d3ee">phase</code>,
+          <code style="font-size:11px;color:#22d3ee">duration_ms</code> e <code style="font-size:11px;color:#22d3ee">token_cost</code>.
+          Alertas configuráveis disparam quando custo por história excede threshold.
+        </p>
+        <div class="icard-tags">
+          <span class="tag">JSON Logs</span>
+          <span class="tag">Token Cost</span>
+          <span class="tag">Threshold Alerts</span>
+          <span class="tag">Source Token</span>
+        </div>
+      </div>
+
+      <!-- Anthropic -->
+      <div class="icard" style="--stripe:#fb923c">
+        <div class="icard-head">
+          <div class="icard-icon" style="background:rgba(251,146,60,.16);border:1px solid rgba(251,146,60,.33);color:#fb923c;font-size:12px">∆</div>
+          <div>
+            <div class="icard-name">Anthropic API</div>
+            <div class="icard-cat">LLM · Geração de Conteúdo</div>
+          </div>
+        </div>
+        <p class="icard-desc">
+          Cérebro de cada agente. Opus 4 para Orquestrador, PO, LT e QA — raciocínio
+          profundo. Sonnet 4 para os 5 agentes DEV — equilíbrio custo/performance.
+          Cada chamada instrumentada para auditoria de custo.
+        </p>
+        <div class="icard-tags">
+          <span class="tag">claude-opus-4-7</span>
+          <span class="tag">claude-sonnet-4-6</span>
+          <span class="tag">Tool Use</span>
+          <span class="tag">Token Metering</span>
+        </div>
+      </div>
+
+    </div>
+  </div><!-- /section cards -->
+
+
+  <!-- ── Data Flow ── -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-line"></div>
+      <h2 class="section-title">Fluxo de Dados — Ciclo de Vida de uma História</h2>
+      <span class="section-note">Ponta a ponta · Backlog → Concluído</span>
+    </div>
+
+    <div class="flow-grid">
+
+      <div class="fstep">
+        <div class="fstep-n">01</div>
+        <div class="fstep-title"><span class="fstep-dot" style="background:#0052CC"></span>Disparo via Jira</div>
+        <p class="fstep-desc">Membro da equipe move card de <strong>Backlog</strong> para <strong>A Refinar</strong>. Jira dispara webhook assinado com HMAC-SHA256 para <code>/webhooks/jira</code> do Render em &lt;5s.</p>
+        <div class="fstep-route">
+          <span class="rc" style="background:rgba(0,82,204,.1);border-color:rgba(0,82,204,.25);color:#2684FF">Jira</span>
+          <span class="ra">→</span>
+          <span class="rc">Render</span>
+          <span class="ra">→</span>
+          <span class="rc" style="background:rgba(45,212,191,.1);border-color:rgba(45,212,191,.25);color:#2dd4bf">Upstash Queue</span>
+        </div>
+      </div>
+
+      <div class="fstep">
+        <div class="fstep-n">02</div>
+        <div class="fstep-title"><span class="fstep-dot" style="background:#60a5fa"></span>Agente PO gera PRD</div>
+        <p class="fstep-desc">Orquestrador detecta transição <em>Em Refinamento</em>, invoca Agente PO. Claude Opus lê a história via Jira API e gera PRD.md com RFs numerados e critérios mensuráveis. Commit automático no GitHub.</p>
+        <div class="fstep-route">
+          <span class="rc">Render/PO</span>
+          <span class="ra">→</span>
+          <span class="rc" style="background:rgba(251,146,60,.1);border-color:rgba(251,146,60,.25);color:#fb923c">Anthropic</span>
+          <span class="ra">→</span>
+          <span class="rc" style="background:rgba(75,85,99,.1);border-color:rgba(75,85,99,.25);color:#9ca3af">GitHub</span>
+        </div>
+      </div>
+
+      <div class="fstep">
+        <div class="fstep-n">03</div>
+        <div class="fstep-title"><span class="fstep-dot" style="background:#22d3ee"></span>Gate Humano — PRD</div>
+        <p class="fstep-desc">Card para em <strong>Aguardando Aceite PRD</strong>. Sistema aguarda ação humana — <em>não avança automaticamente</em>. Jira Reconciliation Job verifica a cada 1-2min se card foi aprovado. Aprovação: card → <em>PRD Aceito</em>.</p>
+        <div class="fstep-route">
+          <span class="rc" style="background:rgba(248,113,113,.1);border-color:rgba(248,113,113,.25);color:#f87171">Gate Humano</span>
+          <span class="ra">→</span>
+          <span class="rc" style="background:rgba(0,82,204,.1);border-color:rgba(0,82,204,.25);color:#2684FF">Jira Status</span>
+          <span class="ra">→</span>
+          <span class="rc">Reconciliação</span>
+        </div>
+      </div>
+
+      <div class="fstep">
+        <div class="fstep-n">04</div>
+        <div class="fstep-title"><span class="fstep-dot" style="background:#34d399"></span>Agente LT gera Plano</div>
+        <p class="fstep-desc">Agente LT lê o PRD.md e o README do repositório. Claude Opus decompõe em tasks técnicas numeradas (TASK-01, 02 ...), identificando paralelas vs. sequenciais. PLANO_DE_EXECUCAO.md commitado.</p>
+        <div class="fstep-route">
+          <span class="rc">Render/LT</span>
+          <span class="ra">→</span>
+          <span class="rc" style="background:rgba(251,146,60,.1);border-color:rgba(251,146,60,.25);color:#fb923c">Anthropic</span>
+          <span class="ra">→</span>
+          <span class="rc" style="background:rgba(75,85,99,.1);border-color:rgba(75,85,99,.25);color:#9ca3af">GitHub</span>
+        </div>
+      </div>
+
+      <div class="fstep">
+        <div class="fstep-n">05</div>
+        <div class="fstep-title"><span class="fstep-dot" style="background:#fbbf24"></span>Agentes DEV implementam (×5)</div>
+        <p class="fstep-desc">Após aprovação do Plano, até 5 Agentes DEV rodam em paralelo via BullMQ (concurrency=5). Cada DEV recebe sua task, implementa código + testes unitários, e abre PR com título <code>[TASK-XX]</code>.</p>
+        <div class="fstep-route">
+          <span class="rc" style="background:rgba(45,212,191,.1);border-color:rgba(45,212,191,.25);color:#2dd4bf">Upstash ×5</span>
+          <span class="ra">→</span>
+          <span class="rc" style="background:rgba(251,146,60,.1);border-color:rgba(251,146,60,.25);color:#fb923c">Anthropic</span>
+          <span class="ra">→</span>
+          <span class="rc" style="background:rgba(75,85,99,.1);border-color:rgba(75,85,99,.25);color:#9ca3af">GitHub PR</span>
+        </div>
+      </div>
+
+      <div class="fstep">
+        <div class="fstep-n">06</div>
+        <div class="fstep-title"><span class="fstep-dot" style="background:#a78bfa"></span>CI/CD + Agente QA</div>
+        <p class="fstep-desc">GitHub Actions executa lint, build, testes e relatório de cobertura. QA analisa resultado: cobertura &lt;85% dispara loop de correção DEV↔QA (máx. 3 iterações). Aprovado: card → <em>Aguardando Aceite QA</em>. Logs e custos em Betterstack + Supabase.</p>
+        <div class="fstep-route">
+          <span class="rc" style="background:rgba(75,85,99,.1);border-color:rgba(75,85,99,.25);color:#9ca3af">GitHub CI</span>
+          <span class="ra">→</span>
+          <span class="rc">QA Agent</span>
+          <span class="ra">→</span>
+          <span class="rc" style="background:rgba(251,146,60,.1);border-color:rgba(251,146,60,.25);color:#fb923c">Betterstack</span>
+        </div>
+      </div>
+
+    </div>
+  </div><!-- /section flow -->
+
+
+  <!-- ── Agent Pipeline ── -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-line"></div>
+      <h2 class="section-title">Pipeline de Agentes — Sequência &amp; Papéis</h2>
+      <span class="section-note">5 agentes · Entregáveis padronizados</span>
+    </div>
+
+    <div class="pipeline">
+
+      <div class="agent-block" style="--acolor:#6366f1">
+        <div class="agent-num">Agente 01</div>
+        <div class="agent-name">Orchestrator</div>
+        <p class="agent-role">Máquina de estados. Lê eventos do Jira, gerencia transições, delega para agentes certos e coordena gates humanos.</p>
+        <div class="agent-out">Modelo</div>
+        <div class="agent-artefact">claude-opus-4-7</div>
+        <div class="agent-arrow">›</div>
+      </div>
+
+      <div class="agent-block" style="--acolor:#3b82f6">
+        <div class="agent-num">Agente 02</div>
+        <div class="agent-name">PO Agent</div>
+        <p class="agent-role">Lê história do Jira + README. Gera PRD.md com RFs numerados, critérios de aceite e riscos. Commita no GitHub.</p>
+        <div class="agent-out">Artefato</div>
+        <div class="agent-artefact">PRD.md</div>
+        <div class="agent-arrow">›</div>
+      </div>
+
+      <div class="agent-block" style="--acolor:#22d3ee">
+        <div class="agent-num">Agente 03</div>
+        <div class="agent-name">LT Agent</div>
+        <p class="agent-role">Lê PRD.md + stack do projeto. Decompõe em tasks técnicas numeradas, identifica paralelismo, estima esforço relativo.</p>
+        <div class="agent-out">Artefato</div>
+        <div class="agent-artefact">PLANO.md</div>
+        <div class="agent-arrow">›</div>
+      </div>
+
+      <div class="agent-block" style="--acolor:#34d399">
+        <div class="agent-num">Agente 04</div>
+        <div class="agent-name">DEV Agent ×5</div>
+        <p class="agent-role">Recebe task do BullMQ. Implementa código + testes unitários. Abre PR com commits atômicos. Até 5 em paralelo.</p>
+        <div class="agent-out">Modelo</div>
+        <div class="agent-artefact">claude-sonnet-4-6</div>
+        <div class="agent-arrow">›</div>
+      </div>
+
+      <div class="agent-block" style="--acolor:#fbbf24">
+        <div class="agent-num">Agente 05</div>
+        <div class="agent-name">QA Agent</div>
+        <p class="agent-role">Analisa relatório CI, mede cobertura ≥85%, roda regressão. Loop DEV↔QA máx. 3× antes de escalar ao humano.</p>
+        <div class="agent-out">Threshold</div>
+        <div class="agent-artefact">≥ 85% coverage</div>
+      </div>
+
+    </div>
+  </div><!-- /section pipeline -->
+
+
+  <!-- ── Infrastructure Summary Table ── -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-line"></div>
+      <h2 class="section-title">Stack de Infraestrutura — Referência Rápida</h2>
+      <span class="section-note">Custo estimado: R$70–225/mês · 20 histórias</span>
+    </div>
+
+    <div class="infra-table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Serviço</th>
+            <th>Camada</th>
+            <th>Função na Squad</th>
+            <th>Autenticação</th>
+            <th>Plano / Custo</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>
+              <div class="td-service">
+                <span class="td-dot" style="background:#0052CC"></span>
+                <span class="td-name">Jira Cloud</span>
+              </div>
+            </td>
+            <td style="color:var(--text3)">Trigger</td>
+            <td>Board de estados · Webhook · Comentários</td>
+            <td><code style="font-size:11px;color:#64748b">Basic Auth (email + token)</code></td>
+            <td>Free / Standard</td>
+            <td><span class="td-badge" style="background:rgba(52,211,153,.12);border:1px solid rgba(52,211,153,.25);color:#34d399">Ativo</span></td>
+          </tr>
+          <tr>
+            <td>
+              <div class="td-service">
+                <span class="td-dot" style="background:#4b5563"></span>
+                <span class="td-name">GitHub</span>
+              </div>
+            </td>
+            <td style="color:var(--text3)">VCS / CI</td>
+            <td>Commits · PRs · Actions · Code Review</td>
+            <td><code style="font-size:11px;color:#64748b">GitHub App JWT</code></td>
+            <td>Free / Team</td>
+            <td><span class="td-badge" style="background:rgba(52,211,153,.12);border:1px solid rgba(52,211,153,.25);color:#34d399">Ativo</span></td>
+          </tr>
+          <tr>
+            <td>
+              <div class="td-service">
+                <span class="td-dot" style="background:#46E3B7"></span>
+                <span class="td-name">Render</span>
+              </div>
+            </td>
+            <td style="color:var(--text3)">Processamento</td>
+            <td>Web Service Node.js · Hub central</td>
+            <td><code style="font-size:11px;color:#64748b">API Key / Deploy Key</code></td>
+            <td>$7–25 /mês</td>
+            <td><span class="td-badge" style="background:rgba(52,211,153,.12);border:1px solid rgba(52,211,153,.25);color:#34d399">Ativo</span></td>
+          </tr>
+          <tr>
+            <td>
+              <div class="td-service">
+                <span class="td-dot" style="background:#34d399"></span>
+                <span class="td-name">UptimeRobot</span>
+              </div>
+            </td>
+            <td style="color:var(--text3)">Monitoramento</td>
+            <td>Health check /health · Alertas downtime</td>
+            <td><code style="font-size:11px;color:#64748b">API Key</code></td>
+            <td>Free (50 monitors)</td>
+            <td><span class="td-badge" style="background:rgba(52,211,153,.12);border:1px solid rgba(52,211,153,.25);color:#34d399">Ativo</span></td>
+          </tr>
+          <tr>
+            <td>
+              <div class="td-service">
+                <span class="td-dot" style="background:#3ecf8e"></span>
+                <span class="td-name">Supabase</span>
+              </div>
+            </td>
+            <td style="color:var(--text3)">Dados</td>
+            <td>PostgreSQL · Storage · Drizzle ORM</td>
+            <td><code style="font-size:11px;color:#64748b">Service Role Key</code></td>
+            <td>Free → $25 /mês</td>
+            <td><span class="td-badge" style="background:rgba(52,211,153,.12);border:1px solid rgba(52,211,153,.25);color:#34d399">Ativo</span></td>
+          </tr>
+          <tr>
+            <td>
+              <div class="td-service">
+                <span class="td-dot" style="background:#2dd4bf"></span>
+                <span class="td-name">Upstash Redis</span>
+              </div>
+            </td>
+            <td style="color:var(--text3)">Fila</td>
+            <td>BullMQ jobs · DLQ · Concurrency=5</td>
+            <td><code style="font-size:11px;color:#64748b">REST Token + rediss://</code></td>
+            <td>$1–5 /mês</td>
+            <td><span class="td-badge" style="background:rgba(52,211,153,.12);border:1px solid rgba(52,211,153,.25);color:#34d399">Ativo</span></td>
+          </tr>
+          <tr>
+            <td>
+              <div class="td-service">
+                <span class="td-dot" style="background:#fb923c"></span>
+                <span class="td-name">Betterstack</span>
+              </div>
+            </td>
+            <td style="color:var(--text3)">Observabilidade</td>
+            <td>Logs JSON · Custo de tokens · Alertas</td>
+            <td><code style="font-size:11px;color:#64748b">Source Token</code></td>
+            <td>Free → $10 /mês</td>
+            <td><span class="td-badge" style="background:rgba(52,211,153,.12);border:1px solid rgba(52,211,153,.25);color:#34d399">Ativo</span></td>
+          </tr>
+          <tr>
+            <td>
+              <div class="td-service">
+                <span class="td-dot" style="background:#fb923c"></span>
+                <span class="td-name">Anthropic API</span>
+              </div>
+            </td>
+            <td style="color:var(--text3)">IA / LLM</td>
+            <td>Geração de PRD · Plano · Código · QA</td>
+            <td><code style="font-size:11px;color:#64748b">API Key (sk-ant-...)</code></td>
+            <td>~$3–8 /história</td>
+            <td><span class="td-badge" style="background:rgba(52,211,153,.12);border:1px solid rgba(52,211,153,.25);color:#34d399">Ativo</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div><!-- /section table -->
+
+</div><!-- /content -->
+
+
+<!-- ═══════════════════ FOOTER ═══════════════════ -->
+<footer class="footer">
+  <div class="footer-l">
+    <span class="footer-logo">Squad 100% Agêntica</span>
+    <span class="footer-sep">·</span>
+    <span class="footer-copy">Documento de Arquitetura de Integrações · v1.0 · Maio 2026</span>
+  </div>
+  <div class="footer-r">
+    <span class="footer-chip">Confidencial Interno</span>
+    <span class="footer-chip">TypeScript · Node.js</span>
+    <span class="footer-chip">Fase 3 / 5</span>
+  </div>
+</footer>
+
+</body>
+</html>
