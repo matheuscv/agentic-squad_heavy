@@ -100,7 +100,13 @@ export interface RunAgentLoopOptions<T> {
   maxToolResultChars?: number;
 }
 
-export async function runAgentLoop<T>(opts: RunAgentLoopOptions<T>): Promise<T> {
+export interface AgentLoopResult<T> {
+  result: T;
+  inputTokens: number;
+  outputTokens: number;
+}
+
+export async function runAgentLoop<T>(opts: RunAgentLoopOptions<T>): Promise<AgentLoopResult<T>> {
   const {
     anthropic, redis, model, system, tools, messages, maxTurns, log,
     dispatchTool, onEndTurn,
@@ -111,6 +117,8 @@ export async function runAgentLoop<T>(opts: RunAgentLoopOptions<T>): Promise<T> 
   } = opts;
 
   let lastInputTokens = 8_000;
+  let totalInputTokens = 0;
+  let totalOutputTokens = 0;
 
   for (let turn = 0; turn < maxTurns; turn++) {
     await waitForAnthropicCapacity(redis, lastInputTokens);
@@ -120,6 +128,8 @@ export async function runAgentLoop<T>(opts: RunAgentLoopOptions<T>): Promise<T> 
       (attempt, waitMs) => log.warn({ turn, attempt, waitMs }, 'rate limit 429 — aguardando janela de tokens'),
     );
     lastInputTokens = response.usage.input_tokens;
+    totalInputTokens += response.usage.input_tokens;
+    totalOutputTokens += response.usage.output_tokens;
 
     log.debug(
       { turn, stop_reason: response.stop_reason, usage: response.usage },
@@ -129,7 +139,7 @@ export async function runAgentLoop<T>(opts: RunAgentLoopOptions<T>): Promise<T> 
     messages.push({ role: 'assistant', content: response.content });
 
     if (response.stop_reason === 'end_turn') {
-      return onEndTurn(response);
+      return { result: onEndTurn(response), inputTokens: totalInputTokens, outputTokens: totalOutputTokens };
     }
 
     const hasToolUse = response.content.some((b) => b.type === 'tool_use');

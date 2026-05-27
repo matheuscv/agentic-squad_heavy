@@ -8,12 +8,14 @@ setDefaultResultOrder('ipv4first');
 import express, { type Request, type Response } from 'express';
 import { Pool } from 'pg';
 import IORedis from 'ioredis';
+import { sql, eq } from 'drizzle-orm';
 import jiraWebhookRouter from './webhooks/jira';
 import { createOrchestratorWorker, createReconciler } from './orchestrator';
 import { createPoAgentWorker } from './agents/po';
 import { createLtAgentWorker } from './agents/lt';
 import { createDevAgentWorker } from './agents/dev-agent';
 import { createQaAgentWorker } from './agents/qa-agent';
+import { db, schema } from './db/index';
 import { logger } from './lib/logger';
 
 const app = express();
@@ -77,6 +79,71 @@ app.get('/health', async (_req: Request, res: Response) => {
     checks,
     ...(dbError && { dbError }),
   });
+});
+
+app.get('/metrics/cost', async (_req: Request, res: Response) => {
+  try {
+    const [byAgentRows, byStoryRows] = await Promise.all([
+      db
+        .select({
+          agentType: schema.agentRuns.agentType,
+          inputTokens:  sql<number>`coalesce(sum(${schema.agentRuns.inputTokens}), 0)`,
+          outputTokens: sql<number>`coalesce(sum(${schema.agentRuns.outputTokens}), 0)`,
+          costUsd:      sql<number>`coalesce(sum(${schema.agentRuns.costUsd}), 0)`,
+          runs:         sql<number>`count(*)`,
+        })
+        .from(schema.agentRuns)
+        .where(eq(schema.agentRuns.status, 'completed'))
+        .groupBy(schema.agentRuns.agentType),
+
+      db
+        .select({
+          jiraKey:      schema.stories.jiraKey,
+          inputTokens:  sql<number>`coalesce(sum(${schema.agentRuns.inputTokens}), 0)`,
+          outputTokens: sql<number>`coalesce(sum(${schema.agentRuns.outputTokens}), 0)`,
+          costUsd:      sql<number>`coalesce(sum(${schema.agentRuns.costUsd}), 0)`,
+          runs:         sql<number>`count(*)`,
+        })
+        .from(schema.agentRuns)
+        .innerJoin(schema.stories, eq(schema.agentRuns.storyId, schema.stories.id))
+        .where(eq(schema.agentRuns.status, 'completed'))
+        .groupBy(schema.stories.jiraKey)
+        .orderBy(sql`sum(${schema.agentRuns.costUsd}) desc nulls last`),
+    ]);
+
+    const totalInputTokens  = byAgentRows.reduce((s, r) => s + Number(r.inputTokens),  0);
+    const totalOutputTokens = byAgentRows.reduce((s, r) => s + Number(r.outputTokens), 0);
+    const totalCostUsd      = byAgentRows.reduce((s, r) => s + Number(r.costUsd),      0);
+
+    res.json({
+      summary: {
+        totalInputTokens,
+        totalOutputTokens,
+        totalCostUsd: parseFloat(totalCostUsd.toFixed(6)),
+      },
+      byAgent: Object.fromEntries(
+        byAgentRows.map((r) => [
+          r.agentType,
+          {
+            inputTokens:  Number(r.inputTokens),
+            outputTokens: Number(r.outputTokens),
+            costUsd:      parseFloat(Number(r.costUsd).toFixed(6)),
+            runs:         Number(r.runs),
+          },
+        ]),
+      ),
+      byStory: byStoryRows.map((r) => ({
+        jiraKey:      r.jiraKey,
+        inputTokens:  Number(r.inputTokens),
+        outputTokens: Number(r.outputTokens),
+        costUsd:      parseFloat(Number(r.costUsd).toFixed(6)),
+        runs:         Number(r.runs),
+      })),
+    });
+  } catch (err) {
+    logger.error({ err: (err as Error).message }, 'falha ao calcular métricas de custo');
+    res.status(500).json({ error: 'falha ao calcular métricas de custo' });
+  }
 });
 
 // ─── Inicialização ────────────────────────────────────────────────────────────

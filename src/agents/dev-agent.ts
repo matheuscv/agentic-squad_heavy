@@ -8,6 +8,7 @@ import { moveCardTo, addComment } from '../jira/client';
 import { createBranch, readFile, listDirectory, commitFiles, createPullRequest, type PullRequestResult } from '../github/client';
 import { childLogger } from '../lib/logger';
 import { runAgentLoop } from '../lib/agent-loop';
+import { calculateCostUsd, checkAndAlertIfOverBudget } from '../lib/cost';
 import { DEV_SYSTEM_PROMPT } from './prompts/dev-system-prompt';
 
 const log = childLogger({ module: 'agent.dev' });
@@ -157,7 +158,7 @@ async function runDevAgent(
   devBranch: string,
   correctionMode: boolean = false,
   correctionIteration: number = 1,
-): Promise<DevAgentResult> {
+): Promise<DevAgentResult & { inputTokens: number; outputTokens: number }> {
   const jobLog = log.child({ jiraKey, agentRunId, devBranch, correctionMode });
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   const model = process.env.ANTHROPIC_MODEL ?? 'claude-opus-4-7';
@@ -258,7 +259,7 @@ Lembre-se:
     return `Ferramenta desconhecida: ${block.name}`;
   };
 
-  return runAgentLoop<DevAgentResult>({
+  const { result, inputTokens, outputTokens } = await runAgentLoop<DevAgentResult>({
     anthropic,
     redis: redisConnection,
     model,
@@ -286,6 +287,7 @@ Lembre-se:
       };
     },
   });
+  return { ...result, inputTokens, outputTokens };
 }
 
 // ─── Processador do job DEV ───────────────────────────────────────────────────
@@ -293,6 +295,7 @@ Lembre-se:
 async function processDevJob(job: Job<DevAgentJobData>): Promise<unknown> {
   const { storyId, jiraKey, agentRunId, summary, correctionMode, correctionIteration } = job.data;
   const startedAt = new Date();
+  const model = process.env.ANTHROPIC_MODEL ?? 'claude-opus-4-7';
   const jobLog = log.child({ jiraKey, agentRunId, storyId, correctionMode });
 
   jobLog.info(correctionMode ? 'iniciando correção DEV (modo correção)' : 'iniciando execução do agente DEV');
@@ -324,12 +327,15 @@ async function processDevJob(job: Job<DevAgentJobData>): Promise<unknown> {
     if (correctionMode) {
       const completedAt = new Date();
       const durationMs = completedAt.getTime() - startedAt.getTime();
+      const costUsd = calculateCostUsd(model, devResult.inputTokens, devResult.outputTokens);
       const output = { correctionMode: true, filesWritten: devResult.filesWritten, iteration: correctionIteration };
       await db
         .update(schema.agentRuns)
-        .set({ status: 'completed', output, durationMs, completedAt })
+        .set({ status: 'completed', output, durationMs, completedAt,
+               inputTokens: devResult.inputTokens, outputTokens: devResult.outputTokens, costUsd })
         .where(eq(schema.agentRuns.id, agentRunId));
-      jobLog.info({ durationMs, files: devResult.filesWritten.length }, 'correção DEV concluída');
+      await checkAndAlertIfOverBudget(storyId, jiraKey, jobLog);
+      jobLog.info({ durationMs, files: devResult.filesWritten.length, inputTokens: devResult.inputTokens, outputTokens: devResult.outputTokens, costUsd }, 'correção DEV concluída');
       return output;
     }
 
@@ -382,6 +388,7 @@ async function processDevJob(job: Job<DevAgentJobData>): Promise<unknown> {
     // 8. Marca run como 'completed'
     const completedAt = new Date();
     const durationMs = completedAt.getTime() - startedAt.getTime();
+    const costUsd = calculateCostUsd(model, devResult.inputTokens, devResult.outputTokens);
     const output = {
       prNumber: devResult.prNumber,
       prUrl: devResult.prHtmlUrl,
@@ -391,10 +398,13 @@ async function processDevJob(job: Job<DevAgentJobData>): Promise<unknown> {
 
     await db
       .update(schema.agentRuns)
-      .set({ status: 'completed', output, durationMs, completedAt })
+      .set({ status: 'completed', output, durationMs, completedAt,
+             inputTokens: devResult.inputTokens, outputTokens: devResult.outputTokens, costUsd })
       .where(eq(schema.agentRuns.id, agentRunId));
 
-    jobLog.info({ durationMs, prNumber: devResult.prNumber }, 'agente DEV concluído');
+    await checkAndAlertIfOverBudget(storyId, jiraKey, jobLog);
+
+    jobLog.info({ durationMs, prNumber: devResult.prNumber, inputTokens: devResult.inputTokens, outputTokens: devResult.outputTokens, costUsd }, 'agente DEV concluído');
     return output;
 
   } catch (err) {

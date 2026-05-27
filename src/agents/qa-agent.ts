@@ -17,6 +17,7 @@ import {
 import { devAgentQueue, DEV_JOB_PRIORITY } from './dev-agent';
 import { childLogger } from '../lib/logger';
 import { runAgentLoop } from '../lib/agent-loop';
+import { calculateCostUsd, checkAndAlertIfOverBudget } from '../lib/cost';
 import { QA_SYSTEM_PROMPT } from './prompts/qa-system-prompt';
 
 function sleep(ms: number): Promise<void> {
@@ -284,7 +285,7 @@ async function runQaAgent(
   summary: string,
   agentRunId: string,
   storyId: string,
-): Promise<QaAgentResult> {
+): Promise<QaAgentResult & { inputTokens: number; outputTokens: number }> {
   const devBranch = `agent/task-${jiraKey.toLowerCase()}`;
   const jobLog = log.child({ jiraKey, agentRunId, devBranch });
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -565,7 +566,7 @@ async function runQaAgent(
     return `Ferramenta desconhecida: ${block.name}`;
   };
 
-  return runAgentLoop<QaAgentResult>({
+  const { result, inputTokens, outputTokens } = await runAgentLoop<QaAgentResult>({
     anthropic,
     redis: redisConnection,
     model,
@@ -585,6 +586,7 @@ async function runQaAgent(
       return qaResult;
     },
   });
+  return { ...result, inputTokens, outputTokens };
 }
 
 // ─── Processador do job QA ────────────────────────────────────────────────────
@@ -592,6 +594,7 @@ async function runQaAgent(
 async function processQaJob(job: Job<QaAgentJobData>): Promise<unknown> {
   const { storyId, jiraKey, agentRunId, summary } = job.data;
   const startedAt = new Date();
+  const model = process.env.ANTHROPIC_MODEL ?? 'claude-opus-4-7';
   const jobLog = log.child({ jiraKey, agentRunId, storyId });
 
   jobLog.info('iniciando execução do agente QA');
@@ -661,6 +664,7 @@ async function processQaJob(job: Job<QaAgentJobData>): Promise<unknown> {
     // Marca run como 'completed'
     const completedAt = new Date();
     const durationMs = completedAt.getTime() - startedAt.getTime();
+    const costUsd = calculateCostUsd(model, qaResult.inputTokens, qaResult.outputTokens);
     const output = {
       passed: qaResult.passed,
       iterations: qaResult.iterations,
@@ -669,10 +673,13 @@ async function processQaJob(job: Job<QaAgentJobData>): Promise<unknown> {
 
     await db
       .update(schema.agentRuns)
-      .set({ status: 'completed', output, durationMs, completedAt })
+      .set({ status: 'completed', output, durationMs, completedAt,
+             inputTokens: qaResult.inputTokens, outputTokens: qaResult.outputTokens, costUsd })
       .where(eq(schema.agentRuns.id, agentRunId));
 
-    jobLog.info({ durationMs, passed: qaResult.passed }, 'agente QA concluído');
+    await checkAndAlertIfOverBudget(storyId, jiraKey, jobLog);
+
+    jobLog.info({ durationMs, passed: qaResult.passed, inputTokens: qaResult.inputTokens, outputTokens: qaResult.outputTokens, costUsd }, 'agente QA concluído');
     return output;
 
   } catch (err) {

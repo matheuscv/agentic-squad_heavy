@@ -38,7 +38,8 @@ vi.mock('bullmq', () => {
 });
 
 vi.mock('drizzle-orm', () => ({
-  eq: vi.fn().mockReturnValue('eq-condition'),
+  eq:  vi.fn().mockReturnValue('eq-condition'),
+  sql: vi.fn().mockReturnValue('sql-expression'),
 }));
 
 const mockDbLt = {

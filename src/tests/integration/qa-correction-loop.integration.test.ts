@@ -45,8 +45,8 @@ const mocks = vi.hoisted(() => ({
   // DB
   dbUpdateWhere:     vi.fn().mockResolvedValue([]),
   dbInsertReturning: vi.fn().mockResolvedValue([{ id: 'new-run-uuid' }]),
-  // Poll de wait_for_dev_correction: select().from().where() aguardado direto
-  dbSelectWhere:     vi.fn(),
+  // Poll de wait_for_dev_correction: select().from().where() aguardado direto; default: [] (custo check)
+  dbSelectWhere:     vi.fn().mockResolvedValue([]),
   // Deduplicação de create_correction_request: select().from().where().limit(1) → [] (sem run ativo)
   dbSelectLimit:     vi.fn().mockResolvedValue([]),
 

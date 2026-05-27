@@ -8,6 +8,7 @@ import { getIssue, moveCardTo, addComment } from '../jira/client';
 import { commitFile, createBranch, readFile } from '../github/client';
 import { childLogger } from '../lib/logger';
 import { runAgentLoop } from '../lib/agent-loop';
+import { calculateCostUsd, checkAndAlertIfOverBudget } from '../lib/cost';
 import { PO_SYSTEM_PROMPT } from './prompts/po-system-prompt';
 
 const log = childLogger({ module: 'agent.po' });
@@ -96,7 +97,7 @@ async function runPoAgent(
   jiraKey: string,
   summary: string,
   agentRunId: string,
-): Promise<string> {
+): Promise<{ prdContent: string; inputTokens: number; outputTokens: number }> {
   const jobLog = log.child({ jiraKey, agentRunId });
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   const model = process.env.ANTHROPIC_MODEL ?? 'claude-opus-4-7';
@@ -139,7 +140,7 @@ Lembre-se: responda APENAS com o markdown do PRD, começando com "# PRD —".`,
     return `Ferramenta desconhecida: ${block.name}`;
   };
 
-  return runAgentLoop<string>({
+  const { result, inputTokens, outputTokens } = await runAgentLoop<string>({
     anthropic,
     redis: redisConnection,
     model,
@@ -161,6 +162,7 @@ Lembre-se: responda APENAS com o markdown do PRD, começando com "# PRD —".`,
       return prdContent;
     },
   });
+  return { prdContent: result, inputTokens, outputTokens };
 }
 
 // ─── Processador do job PO ────────────────────────────────────────────────────
@@ -168,6 +170,7 @@ Lembre-se: responda APENAS com o markdown do PRD, começando com "# PRD —".`,
 async function processPoJob(job: Job<PoAgentJobData>): Promise<unknown> {
   const { storyId, jiraKey, agentRunId, summary } = job.data;
   const startedAt = new Date();
+  const model = process.env.ANTHROPIC_MODEL ?? 'claude-opus-4-7';
   const jobLog = log.child({ jiraKey, agentRunId, storyId });
 
   jobLog.info('iniciando execução do agente PO');
@@ -192,8 +195,9 @@ async function processPoJob(job: Job<PoAgentJobData>): Promise<unknown> {
     }
 
     // 3. Gera PRD via Claude (tool-use loop)
-    const prdContent = await runPoAgent(jiraKey, summary, agentRunId);
-    jobLog.info({ prdLength: prdContent.length }, 'PRD.md gerado pelo Claude');
+    const { prdContent, inputTokens, outputTokens } = await runPoAgent(jiraKey, summary, agentRunId);
+    const costUsd = calculateCostUsd(model, inputTokens, outputTokens);
+    jobLog.info({ prdLength: prdContent.length, inputTokens, outputTokens, costUsd }, 'PRD.md gerado pelo Claude');
 
     // 4. Salva artifact no banco
     const prdFilePath = `${jiraKey}/PRD.md`;
@@ -277,10 +281,12 @@ async function processPoJob(job: Job<PoAgentJobData>): Promise<unknown> {
 
     await db
       .update(schema.agentRuns)
-      .set({ status: 'completed', output, durationMs, completedAt })
+      .set({ status: 'completed', output, durationMs, completedAt, inputTokens, outputTokens, costUsd })
       .where(eq(schema.agentRuns.id, agentRunId));
 
-    jobLog.info({ durationMs, branch }, 'agente PO concluído');
+    await checkAndAlertIfOverBudget(storyId, jiraKey, jobLog);
+
+    jobLog.info({ durationMs, branch, inputTokens, outputTokens, costUsd }, 'agente PO concluído');
     return output;
 
   } catch (err) {

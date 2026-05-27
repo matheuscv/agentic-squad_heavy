@@ -8,6 +8,7 @@ import { moveCardTo, addComment } from '../jira/client';
 import { commitFile, readFile } from '../github/client';
 import { childLogger } from '../lib/logger';
 import { runAgentLoop } from '../lib/agent-loop';
+import { calculateCostUsd, checkAndAlertIfOverBudget } from '../lib/cost';
 import { LT_SYSTEM_PROMPT } from './prompts/lt-system-prompt';
 
 const log = childLogger({ module: 'agent.lt' });
@@ -74,7 +75,7 @@ async function runLtAgent(
   jiraKey: string,
   summary: string,
   agentRunId: string,
-): Promise<string> {
+): Promise<{ planContent: string; inputTokens: number; outputTokens: number }> {
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   const model = process.env.ANTHROPIC_MODEL ?? 'claude-opus-4-7';
   const prdBranch = `prd/${jiraKey.toLowerCase()}`;
@@ -107,7 +108,7 @@ Lembre-se: responda APENAS com o markdown do plano, começando com "# Plano de E
     return `Ferramenta desconhecida: ${block.name}`;
   };
 
-  return runAgentLoop<string>({
+  const { result, inputTokens, outputTokens } = await runAgentLoop<string>({
     anthropic,
     redis: redisConnection,
     model,
@@ -129,6 +130,7 @@ Lembre-se: responda APENAS com o markdown do plano, começando com "# Plano de E
       return planContent;
     },
   });
+  return { planContent: result, inputTokens, outputTokens };
 }
 
 // ─── Processador do job LT ────────────────────────────────────────────────────
@@ -136,6 +138,7 @@ Lembre-se: responda APENAS com o markdown do plano, começando com "# Plano de E
 async function processLtJob(job: Job<LtAgentJobData>): Promise<unknown> {
   const { storyId, jiraKey, agentRunId, summary } = job.data;
   const startedAt = new Date();
+  const model = process.env.ANTHROPIC_MODEL ?? 'claude-opus-4-7';
   const jobLog = log.child({ jiraKey, agentRunId, storyId });
 
   jobLog.info('iniciando execução do agente LT');
@@ -148,8 +151,9 @@ async function processLtJob(job: Job<LtAgentJobData>): Promise<unknown> {
 
   try {
     // 2. Gera PLANO_DE_EXECUCAO.md via Claude (tool-use loop)
-    const planContent = await runLtAgent(jiraKey, summary, agentRunId);
-    jobLog.info({ planLength: planContent.length }, 'PLANO_DE_EXECUCAO.md gerado pelo Claude');
+    const { planContent, inputTokens, outputTokens } = await runLtAgent(jiraKey, summary, agentRunId);
+    const costUsd = calculateCostUsd(model, inputTokens, outputTokens);
+    jobLog.info({ planLength: planContent.length, inputTokens, outputTokens, costUsd }, 'PLANO_DE_EXECUCAO.md gerado pelo Claude');
 
     // 3. Salva artifact no banco
     const planFilePath = `${jiraKey}/PLANO_DE_EXECUCAO.md`;
@@ -228,10 +232,12 @@ async function processLtJob(job: Job<LtAgentJobData>): Promise<unknown> {
 
     await db
       .update(schema.agentRuns)
-      .set({ status: 'completed', output, durationMs, completedAt })
+      .set({ status: 'completed', output, durationMs, completedAt, inputTokens, outputTokens, costUsd })
       .where(eq(schema.agentRuns.id, agentRunId));
 
-    jobLog.info({ durationMs, branch }, 'agente LT concluído');
+    await checkAndAlertIfOverBudget(storyId, jiraKey, jobLog);
+
+    jobLog.info({ durationMs, branch, inputTokens, outputTokens, costUsd }, 'agente LT concluído');
     return output;
 
   } catch (err) {
