@@ -147,17 +147,16 @@ describe('formatDate', () => {
       expect(() => formatDate(NaN)).toThrow(TypeError);
     });
 
-    it('mensagem do TypeError para NaN menciona o valor recebido', () => {
+    it('mensagem do TypeError para NaN menciona que não foi possível converter', () => {
       // JSON.stringify(NaN) retorna "null" — verificamos que o erro é lançado
       expect(() => formatDate(NaN)).toThrowError(
         /Não foi possível converter para Date/,
       );
     });
 
-    it('lança TypeError para string vazia', () => {
+    it('lança TypeError ou retorna string para string vazia (cobertura de branch)', () => {
       // new Date('') resulta em Invalid Date em alguns engines
-      // Verificamos que a função não retorna silenciosamente
-      // (alguns engines aceitam string vazia — garantimos cobertura do branch)
+      // Garantimos que a função não falha silenciosamente
       try {
         const result = formatDate('');
         // Se não lançar, a string deve ser não-vazia (engines permissivos)
