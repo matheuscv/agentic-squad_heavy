@@ -80,6 +80,9 @@ vi.mock('../../lib/logger', () => ({
     info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn(),
     child: () => ({ info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() }),
   }),
+  logAgentStarted:   vi.fn(),
+  logAgentCompleted: vi.fn(),
+  logAgentFailed:    vi.fn(),
 }));
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

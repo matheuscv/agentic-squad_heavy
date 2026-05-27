@@ -15,16 +15,17 @@ import {
   type PrFileEntry,
 } from '../github/client';
 import { devAgentQueue, DEV_JOB_PRIORITY } from './dev-agent';
-import { childLogger } from '../lib/logger';
+import { childLogger, logAgentStarted, logAgentCompleted, logAgentFailed } from '../lib/logger';
 import { runAgentLoop } from '../lib/agent-loop';
 import { calculateCostUsd, checkAndAlertIfOverBudget } from '../lib/cost';
+import { sendBetterstackAlert } from '../lib/betterstack';
 import { QA_SYSTEM_PROMPT } from './prompts/qa-system-prompt';
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-const log = childLogger({ module: 'agent.qa' });
+const log = childLogger({ module: 'agent.qa', agent: 'qa' });
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -529,7 +530,18 @@ async function runQaAgent(
         reason: string;
         final_coverage?: Record<string, unknown>;
       };
-      jobLog.warn({ reason, final_coverage }, 'QA escalando para humano — cobertura insuficiente');
+      jobLog.warn({ reason, final_coverage, event: 'human_escalation' }, 'QA escalando para humano — cobertura insuficiente');
+      void sendBetterstackAlert({
+        level: 'warn',
+        event: 'human_escalation',
+        message: `[${jiraKey}] QA escalou para humano após 3 iterações: ${reason}`,
+        jiraKey,
+        storyId,
+        agentRunId,
+        phase: 'qa_review',
+        reason,
+        finalCoverage: final_coverage,
+      });
       try {
         await addComment(
           jiraKey,
@@ -596,8 +608,9 @@ async function processQaJob(job: Job<QaAgentJobData>): Promise<unknown> {
   const startedAt = new Date();
   const model = process.env.ANTHROPIC_MODEL ?? 'claude-opus-4-7';
   const jobLog = log.child({ jiraKey, agentRunId, storyId });
+  const phase = 'qa_review';
 
-  jobLog.info('iniciando execução do agente QA');
+  logAgentStarted(jobLog, { storyId, jiraKey, agentRunId, agent: 'qa', phase });
 
   await db
     .update(schema.agentRuns)
@@ -679,7 +692,7 @@ async function processQaJob(job: Job<QaAgentJobData>): Promise<unknown> {
 
     await checkAndAlertIfOverBudget(storyId, jiraKey, jobLog);
 
-    jobLog.info({ durationMs, passed: qaResult.passed, inputTokens: qaResult.inputTokens, outputTokens: qaResult.outputTokens, costUsd }, 'agente QA concluído');
+    logAgentCompleted(jobLog, { storyId, jiraKey, agentRunId, agent: 'qa', phase, durationMs, inputTokens: qaResult.inputTokens, outputTokens: qaResult.outputTokens, tokenCostUsd: costUsd });
     return output;
 
   } catch (err) {
@@ -692,7 +705,8 @@ async function processQaJob(job: Job<QaAgentJobData>): Promise<unknown> {
       .set({ status: 'failed', errorMessage, durationMs, completedAt })
       .where(eq(schema.agentRuns.id, agentRunId));
 
-    jobLog.error({ err: errorMessage, durationMs, attempt: job.attemptsMade + 1 }, 'agente QA falhou');
+    logAgentFailed(jobLog, { storyId, jiraKey, agentRunId, agent: 'qa', phase, durationMs, error: errorMessage });
+    void sendBetterstackAlert({ level: 'error', event: 'agent_failed', message: `[${jiraKey}] agente QA falhou: ${errorMessage}`, jiraKey, storyId, agentRunId, phase, durationMs });
     throw err;
   }
 }

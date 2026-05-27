@@ -1,6 +1,7 @@
 import { sql, eq } from 'drizzle-orm';
 import { db, schema } from '../db/index';
 import { addComment } from '../jira/client';
+import { sendBetterstackAlert } from './betterstack';
 
 // ─── Tabela de preços por modelo (USD por milhão de tokens) ──────────────────
 
@@ -39,7 +40,17 @@ export async function checkAndAlertIfOverBudget(
   const totalCost = Number(row?.totalCost ?? 0);
 
   if (totalCost > threshold) {
-    log.warn({ jiraKey, totalCost, threshold }, 'custo da história excedeu o threshold');
+    log.warn({ jiraKey, totalCost, threshold, event: 'cost_threshold_exceeded' }, 'custo da história excedeu o threshold');
+
+    void sendBetterstackAlert({
+      level: 'warn',
+      event: 'cost_threshold_exceeded',
+      message: `[${jiraKey}] custo acumulado USD ${totalCost.toFixed(4)} excede threshold USD ${threshold.toFixed(2)}`,
+      jiraKey,
+      storyId,
+      totalCostUsd: totalCost,
+      thresholdUsd: threshold,
+    });
 
     const comment =
       `⚠️ *Alerta de Custo — Squad Agêntica*\n\n` +

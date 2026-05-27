@@ -91,6 +91,9 @@ vi.mock('../lib/logger', () => ({
     error: vi.fn(),
     child: vi.fn().mockReturnThis(),
   }),
+  logAgentStarted:   vi.fn(),
+  logAgentCompleted: vi.fn(),
+  logAgentFailed:    vi.fn(),
 }));
 
 const mockLtAnthropicCreate = vi.hoisted(() => vi.fn());

@@ -6,12 +6,13 @@ import { updateStoryStatus, updateStoryDescription } from '../db/stories';
 import { redisConnection } from '../queue/index';
 import { getIssue, moveCardTo, addComment } from '../jira/client';
 import { commitFile, createBranch, readFile } from '../github/client';
-import { childLogger } from '../lib/logger';
+import { childLogger, logAgentStarted, logAgentCompleted, logAgentFailed } from '../lib/logger';
 import { runAgentLoop } from '../lib/agent-loop';
 import { calculateCostUsd, checkAndAlertIfOverBudget } from '../lib/cost';
+import { sendBetterstackAlert } from '../lib/betterstack';
 import { PO_SYSTEM_PROMPT } from './prompts/po-system-prompt';
 
-const log = childLogger({ module: 'agent.po' });
+const log = childLogger({ module: 'agent.po', agent: 'po' });
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -172,8 +173,9 @@ async function processPoJob(job: Job<PoAgentJobData>): Promise<unknown> {
   const startedAt = new Date();
   const model = process.env.ANTHROPIC_MODEL ?? 'claude-opus-4-7';
   const jobLog = log.child({ jiraKey, agentRunId, storyId });
+  const phase = 'prd_generation';
 
-  jobLog.info('iniciando execução do agente PO');
+  logAgentStarted(jobLog, { storyId, jiraKey, agentRunId, agent: 'po', phase });
 
   // 1. Marca run como 'running'
   await db
@@ -286,7 +288,7 @@ async function processPoJob(job: Job<PoAgentJobData>): Promise<unknown> {
 
     await checkAndAlertIfOverBudget(storyId, jiraKey, jobLog);
 
-    jobLog.info({ durationMs, branch, inputTokens, outputTokens, costUsd }, 'agente PO concluído');
+    logAgentCompleted(jobLog, { storyId, jiraKey, agentRunId, agent: 'po', phase, durationMs, inputTokens, outputTokens, tokenCostUsd: costUsd });
     return output;
 
   } catch (err) {
@@ -299,7 +301,8 @@ async function processPoJob(job: Job<PoAgentJobData>): Promise<unknown> {
       .set({ status: 'failed', errorMessage, durationMs, completedAt })
       .where(eq(schema.agentRuns.id, agentRunId));
 
-    jobLog.error({ err: errorMessage, durationMs, attempt: job.attemptsMade + 1 }, 'agente PO falhou');
+    logAgentFailed(jobLog, { storyId, jiraKey, agentRunId, agent: 'po', phase, durationMs, error: errorMessage });
+    void sendBetterstackAlert({ level: 'error', event: 'agent_failed', message: `[${jiraKey}] agente PO falhou: ${errorMessage}`, jiraKey, storyId, agentRunId, phase, durationMs });
     throw err;
   }
 }

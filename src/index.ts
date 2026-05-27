@@ -9,6 +9,7 @@ import express, { type Request, type Response } from 'express';
 import { Pool } from 'pg';
 import IORedis from 'ioredis';
 import { sql, eq } from 'drizzle-orm';
+import { getAvgDurationByAgent, getSuccessRateByAgent, getCorrectionLoopsByStory } from './lib/metrics';
 import jiraWebhookRouter from './webhooks/jira';
 import { createOrchestratorWorker, createReconciler } from './orchestrator';
 import { createPoAgentWorker } from './agents/po';
@@ -79,6 +80,52 @@ app.get('/health', async (_req: Request, res: Response) => {
     checks,
     ...(dbError && { dbError }),
   });
+});
+
+app.get('/metrics', async (_req: Request, res: Response) => {
+  try {
+    const [durationRows, statusRows, correctionRows] = await Promise.all([
+      getAvgDurationByAgent(),
+      getSuccessRateByAgent(),
+      getCorrectionLoopsByStory(),
+    ]);
+
+    const avgDurationByPhase = Object.fromEntries(
+      durationRows.map((r) => [
+        r.agentType,
+        {
+          avgDurationMs: Number(r.avgDurationMs),
+          p50DurationMs: Number(r.p50DurationMs),
+          p95DurationMs: Number(r.p95DurationMs),
+          totalRuns:     Number(r.totalRuns),
+        },
+      ]),
+    );
+
+    const successRate = Object.fromEntries(
+      statusRows.map((r) => {
+        const total     = Number(r.total);
+        const completed = Number(r.completed);
+        const failed    = Number(r.failed);
+        return [
+          r.agentType,
+          { total, completed, failed, rate: total > 0 ? parseFloat((completed / total).toFixed(4)) : 0 },
+        ];
+      }),
+    );
+
+    res.json({
+      avgDurationByPhase,
+      successRate,
+      correctionLoopsByStory: correctionRows.map((r) => ({
+        jiraKey:     r.jiraKey,
+        corrections: Number(r.corrections),
+      })),
+    });
+  } catch (err) {
+    logger.error({ err: (err as Error).message }, 'falha ao calcular métricas');
+    res.status(500).json({ error: 'falha ao calcular métricas' });
+  }
 });
 
 app.get('/metrics/cost', async (_req: Request, res: Response) => {

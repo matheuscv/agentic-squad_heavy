@@ -6,12 +6,13 @@ import { updateStoryStatus } from '../db/stories';
 import { redisConnection } from '../queue/index';
 import { moveCardTo, addComment } from '../jira/client';
 import { createBranch, readFile, listDirectory, commitFiles, createPullRequest, type PullRequestResult } from '../github/client';
-import { childLogger } from '../lib/logger';
+import { childLogger, logAgentStarted, logAgentCompleted, logAgentFailed } from '../lib/logger';
 import { runAgentLoop } from '../lib/agent-loop';
 import { calculateCostUsd, checkAndAlertIfOverBudget } from '../lib/cost';
+import { sendBetterstackAlert } from '../lib/betterstack';
 import { DEV_SYSTEM_PROMPT } from './prompts/dev-system-prompt';
 
-const log = childLogger({ module: 'agent.dev' });
+const log = childLogger({ module: 'agent.dev', agent: 'dev' });
 
 // ─── Prioridades de job ───────────────────────────────────────────────────────
 // Valores menores = processados primeiro pelo BullMQ.
@@ -297,8 +298,9 @@ async function processDevJob(job: Job<DevAgentJobData>): Promise<unknown> {
   const startedAt = new Date();
   const model = process.env.ANTHROPIC_MODEL ?? 'claude-opus-4-7';
   const jobLog = log.child({ jiraKey, agentRunId, storyId, correctionMode });
+  const phase = correctionMode ? 'dev_correction' : 'development';
 
-  jobLog.info(correctionMode ? 'iniciando correção DEV (modo correção)' : 'iniciando execução do agente DEV');
+  logAgentStarted(jobLog, { storyId, jiraKey, agentRunId, agent: 'dev', phase });
 
   // 1. Marca run como 'running'
   await db
@@ -335,7 +337,7 @@ async function processDevJob(job: Job<DevAgentJobData>): Promise<unknown> {
                inputTokens: devResult.inputTokens, outputTokens: devResult.outputTokens, costUsd })
         .where(eq(schema.agentRuns.id, agentRunId));
       await checkAndAlertIfOverBudget(storyId, jiraKey, jobLog);
-      jobLog.info({ durationMs, files: devResult.filesWritten.length, inputTokens: devResult.inputTokens, outputTokens: devResult.outputTokens, costUsd }, 'correção DEV concluída');
+      logAgentCompleted(jobLog, { storyId, jiraKey, agentRunId, agent: 'dev', phase, durationMs, inputTokens: devResult.inputTokens, outputTokens: devResult.outputTokens, tokenCostUsd: costUsd });
       return output;
     }
 
@@ -404,7 +406,7 @@ async function processDevJob(job: Job<DevAgentJobData>): Promise<unknown> {
 
     await checkAndAlertIfOverBudget(storyId, jiraKey, jobLog);
 
-    jobLog.info({ durationMs, prNumber: devResult.prNumber, inputTokens: devResult.inputTokens, outputTokens: devResult.outputTokens, costUsd }, 'agente DEV concluído');
+    logAgentCompleted(jobLog, { storyId, jiraKey, agentRunId, agent: 'dev', phase, durationMs, inputTokens: devResult.inputTokens, outputTokens: devResult.outputTokens, tokenCostUsd: costUsd });
     return output;
 
   } catch (err) {
@@ -417,7 +419,8 @@ async function processDevJob(job: Job<DevAgentJobData>): Promise<unknown> {
       .set({ status: 'failed', errorMessage, durationMs, completedAt })
       .where(eq(schema.agentRuns.id, agentRunId));
 
-    jobLog.error({ err: errorMessage, durationMs, attempt: job.attemptsMade + 1 }, 'agente DEV falhou');
+    logAgentFailed(jobLog, { storyId, jiraKey, agentRunId, agent: 'dev', phase, durationMs, error: errorMessage });
+    void sendBetterstackAlert({ level: 'error', event: 'agent_failed', message: `[${jiraKey}] agente DEV falhou: ${errorMessage}`, jiraKey, storyId, agentRunId, phase, durationMs });
     throw err;
   }
 }
