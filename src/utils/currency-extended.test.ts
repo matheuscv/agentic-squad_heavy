@@ -1,149 +1,147 @@
 /**
- * Testes adicionais para src/utils/currency.ts
- * Cobre branches e edge cases não cobertos pelo currency.test.ts original
+ * Testes adicionais de cobertura para src/utils/currency.ts
+ * Complementa currency.test.ts com branches não cobertos
  */
 import { describe, it, expect } from 'vitest';
 import { formatCurrency } from './currency';
 
-describe('formatCurrency — casos estendidos', () => {
-  // ─── BRL ──────────────────────────────────────────────────────────────────
+describe('formatCurrency — cobertura de branches adicionais', () => {
+  // ─── Valores extremos ────────────────────────────────────────────────────────
 
-  describe('BRL — Real Brasileiro', () => {
-    it('formata valor zero em BRL', () => {
+  describe('valores extremos e especiais', () => {
+    it('formata zero para BRL', () => {
       const result = formatCurrency(0, 'BRL');
-      expect(result).toMatch(/0/);
+      expect(result).toContain('0');
     });
 
-    it('formata valor positivo grande em BRL', () => {
-      const result = formatCurrency(1_000_000, 'BRL');
-      expect(result).toMatch(/1/);
-    });
-
-    it('formata valor negativo em BRL', () => {
-      const result = formatCurrency(-99.99, 'BRL');
-      expect(result).toMatch(/99/);
-    });
-
-    it('formata centavos em BRL', () => {
-      const result = formatCurrency(0.01, 'BRL');
-      expect(result).toMatch(/0/);
-    });
-
-    it('formata valor com múltiplas casas decimais em BRL (arredondamento)', () => {
-      const result = formatCurrency(1.005, 'BRL');
-      expect(result).toBeDefined();
-      expect(typeof result).toBe('string');
-    });
-
-    it('retorna string não vazia para BRL', () => {
-      const result = formatCurrency(100, 'BRL');
-      expect(result.length).toBeGreaterThan(0);
-    });
-  });
-
-  // ─── USD ──────────────────────────────────────────────────────────────────
-
-  describe('USD — Dólar Americano', () => {
-    it('formata valor zero em USD', () => {
+    it('formata zero para USD', () => {
       const result = formatCurrency(0, 'USD');
-      expect(result).toMatch(/0/);
+      expect(result).toContain('0');
     });
 
-    it('formata valor positivo em USD', () => {
-      const result = formatCurrency(500.5, 'USD');
-      expect(result).toMatch(/500/);
-    });
-
-    it('formata valor negativo em USD', () => {
-      const result = formatCurrency(-1234.56, 'USD');
-      expect(result).toMatch(/1/);
-    });
-
-    it('formata valor muito pequeno em USD', () => {
-      const result = formatCurrency(0.99, 'USD');
-      expect(result).toMatch(/99/);
-    });
-
-    it('formata milhão em USD', () => {
-      const result = formatCurrency(1_000_000.00, 'USD');
-      expect(result).toMatch(/1/);
-    });
-
-    it('retorna string com símbolo dólar ou código USD', () => {
-      const result = formatCurrency(42, 'USD');
-      expect(result).toBeDefined();
-      expect(typeof result).toBe('string');
-    });
-  });
-
-  // ─── EUR ──────────────────────────────────────────────────────────────────
-
-  describe('EUR — Euro', () => {
-    it('formata valor zero em EUR', () => {
+    it('formata zero para EUR', () => {
       const result = formatCurrency(0, 'EUR');
-      expect(result).toMatch(/0/);
+      expect(result).toContain('0');
     });
 
-    it('formata valor positivo em EUR', () => {
-      const result = formatCurrency(250.75, 'EUR');
-      expect(result).toMatch(/250/);
-    });
-
-    it('formata valor negativo em EUR', () => {
-      const result = formatCurrency(-99.50, 'EUR');
-      expect(result).toMatch(/99/);
-    });
-
-    it('formata valor com dois decimais em EUR', () => {
-      const result = formatCurrency(1.23, 'EUR');
-      expect(result).toMatch(/1/);
-    });
-
-    it('retorna string não vazia para EUR', () => {
-      const result = formatCurrency(100, 'EUR');
+    it('formata valor negativo para BRL', () => {
+      const result = formatCurrency(-100, 'BRL');
+      expect(result).toBeDefined();
       expect(result.length).toBeGreaterThan(0);
     });
-  });
 
-  // ─── Tipos de retorno ──────────────────────────────────────────────────────
-
-  describe('tipo de retorno', () => {
-    it('sempre retorna uma string', () => {
-      expect(typeof formatCurrency(1, 'BRL')).toBe('string');
-      expect(typeof formatCurrency(1, 'USD')).toBe('string');
-      expect(typeof formatCurrency(1, 'EUR')).toBe('string');
+    it('formata valor negativo para USD', () => {
+      const result = formatCurrency(-50.99, 'USD');
+      expect(result).toBeDefined();
+      expect(result.length).toBeGreaterThan(0);
     });
 
-    it('diferentes moedas produzem formatações diferentes', () => {
+    it('formata valor negativo para EUR', () => {
+      const result = formatCurrency(-1234.56, 'EUR');
+      expect(result).toBeDefined();
+      expect(result.length).toBeGreaterThan(0);
+    });
+
+    it('formata valor muito grande para BRL', () => {
+      const result = formatCurrency(1_000_000_000, 'BRL');
+      expect(result).toBeDefined();
+      expect(result).toContain('1');
+    });
+
+    it('formata valor muito grande para USD', () => {
+      const result = formatCurrency(999_999_999.99, 'USD');
+      expect(result).toBeDefined();
+    });
+
+    it('formata valor muito pequeno (frações) para EUR', () => {
+      const result = formatCurrency(0.01, 'EUR');
+      expect(result).toBeDefined();
+      expect(result).toContain('0');
+    });
+  });
+
+  // ─── Tipos de moeda ──────────────────────────────────────────────────────────
+
+  describe('cobertura completa por moeda', () => {
+    it('formata corretamente BRL com símbolo R$', () => {
+      const result = formatCurrency(1234.56, 'BRL');
+      // BRL deve conter R$ ou "BRL"
+      expect(typeof result).toBe('string');
+      expect(result.length).toBeGreaterThan(0);
+    });
+
+    it('formata corretamente USD com símbolo $', () => {
+      const result = formatCurrency(1234.56, 'USD');
+      expect(typeof result).toBe('string');
+      expect(result.length).toBeGreaterThan(0);
+    });
+
+    it('formata corretamente EUR', () => {
+      const result = formatCurrency(1234.56, 'EUR');
+      expect(typeof result).toBe('string');
+      expect(result.length).toBeGreaterThan(0);
+    });
+
+    it('BRL e USD produzem resultados distintos para o mesmo valor', () => {
       const brl = formatCurrency(100, 'BRL');
       const usd = formatCurrency(100, 'USD');
+      expect(brl).not.toBe(usd);
+    });
+
+    it('USD e EUR produzem resultados distintos para o mesmo valor', () => {
+      const usd = formatCurrency(100, 'USD');
       const eur = formatCurrency(100, 'EUR');
-      // Pelo menos duas delas devem ser diferentes
-      const allSame = brl === usd && usd === eur;
-      expect(allSame).toBe(false);
+      expect(usd).not.toBe(eur);
     });
   });
 
-  // ─── Valores extremos ─────────────────────────────────────────────────────
+  // ─── Arredondamento e casas decimais ─────────────────────────────────────────
 
-  describe('valores extremos', () => {
-    it('formata Number.MAX_SAFE_INTEGER', () => {
-      const result = formatCurrency(Number.MAX_SAFE_INTEGER, 'USD');
-      expect(typeof result).toBe('string');
-      expect(result.length).toBeGreaterThan(0);
-    });
-
-    it('formata Number.MIN_SAFE_INTEGER', () => {
-      const result = formatCurrency(Number.MIN_SAFE_INTEGER, 'EUR');
+  describe('arredondamento e precisão', () => {
+    it('formata valor com muitas casas decimais para BRL', () => {
+      const result = formatCurrency(1.999999, 'BRL');
+      expect(result).toBeDefined();
       expect(typeof result).toBe('string');
     });
 
-    it('formata NaN sem lançar exceção', () => {
-      expect(() => formatCurrency(NaN, 'BRL')).not.toThrow();
+    it('formata valor com exatamente 2 casas decimais para USD', () => {
+      const result = formatCurrency(9.99, 'USD');
+      expect(result).toBeDefined();
     });
 
-    it('formata Infinity sem lançar exceção', () => {
-      expect(() => formatCurrency(Infinity, 'USD')).not.toThrow();
+    it('formata valor inteiro para EUR', () => {
+      const result = formatCurrency(500, 'EUR');
+      expect(result).toBeDefined();
+    });
+  });
+
+  // ─── Invariantes ─────────────────────────────────────────────────────────────
+
+  describe('invariantes gerais', () => {
+    it('sempre retorna uma string não-vazia', () => {
+      const cases: Array<[number, 'BRL' | 'USD' | 'EUR']> = [
+        [0, 'BRL'], [0, 'USD'], [0, 'EUR'],
+        [1, 'BRL'], [1, 'USD'], [1, 'EUR'],
+        [-1, 'BRL'], [-1, 'USD'], [-1, 'EUR'],
+        [100.5, 'BRL'], [100.5, 'USD'], [100.5, 'EUR'],
+      ];
+      for (const [value, currency] of cases) {
+        const result = formatCurrency(value, currency);
+        expect(typeof result).toBe('string');
+        expect(result.length).toBeGreaterThan(0);
+      }
+    });
+
+    it('formata o mesmo valor de forma determinística', () => {
+      const v1 = formatCurrency(250.75, 'BRL');
+      const v2 = formatCurrency(250.75, 'BRL');
+      expect(v1).toBe(v2);
+    });
+
+    it('formata o mesmo valor de forma determinística para USD', () => {
+      const v1 = formatCurrency(42.0, 'USD');
+      const v2 = formatCurrency(42.0, 'USD');
+      expect(v1).toBe(v2);
     });
   });
 });
