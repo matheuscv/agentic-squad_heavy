@@ -86,6 +86,7 @@ vi.mock('../../agents/lt', () => ({
 
 vi.mock('../../agents/dev-agent', () => ({
   devAgentQueue: { add: mocks.devQueueAdd, close: vi.fn() },
+  DEV_JOB_PRIORITY: { CRITICAL: 1, HIGH: 10, NORMAL: 100, LOW: 1000 },
 }));
 
 vi.mock('../../agents/qa-agent', () => ({

@@ -6,7 +6,7 @@ import { redisConnection, type OrchestratorJobData } from '../queue/index';
 import { moveCardTo } from '../jira/client';
 import { poAgentQueue } from '../agents/po';
 import { ltAgentQueue } from '../agents/lt';
-import { devAgentQueue } from '../agents/dev-agent';
+import { devAgentQueue, DEV_JOB_PRIORITY } from '../agents/dev-agent';
 import { qaAgentQueue } from '../agents/qa-agent';
 import { childLogger } from '../lib/logger';
 import {
@@ -172,7 +172,7 @@ async function dispatchAgent(
       await devAgentQueue.add(
         'dev:run',
         { storyId, jiraKey, agentRunId, summary: jobData.summary, fromStatus: jobData.fromStatus },
-        { jobId: `dev-${jiraKey}-${agentRunId}` },
+        { jobId: `dev-${jiraKey}-${agentRunId}`, priority: DEV_JOB_PRIORITY.NORMAL },
       );
       log.info({ jiraKey, agentRunId, queue: 'agent-dev' }, 'job enfileirado para agente DEV');
       break;

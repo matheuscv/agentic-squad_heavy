@@ -12,6 +12,18 @@ import { DEV_SYSTEM_PROMPT } from './prompts/dev-system-prompt';
 
 const log = childLogger({ module: 'agent.dev' });
 
+// ─── Prioridades de job ───────────────────────────────────────────────────────
+// Valores menores = processados primeiro pelo BullMQ.
+
+export const DEV_JOB_PRIORITY = {
+  CRITICAL: 1,   // reservado para histórias bloqueantes de alto impacto
+  HIGH: 10,      // correções requisitadas pelo Agente QA (bloqueiam o ciclo de QA)
+  NORMAL: 100,   // implementação padrão de histórias
+  LOW: 1000,     // trabalho opcional ou de baixa urgência
+} as const;
+
+export type DevJobPriority = typeof DEV_JOB_PRIORITY[keyof typeof DEV_JOB_PRIORITY];
+
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
 export type DevAgentJobData = {
@@ -22,6 +34,7 @@ export type DevAgentJobData = {
   fromStatus: string | null;
   correctionMode?: boolean;     // true quando invocado pelo Agente QA para corrigir falhas
   correctionIteration?: number; // ciclo de correção (1–3)
+  priority?: DevJobPriority;    // prioridade na fila (padrão: NORMAL)
 };
 
 type DevAgentResult = {
@@ -152,7 +165,8 @@ async function runDevAgent(
   const prdBranch = `prd/${jiraKey.toLowerCase()}`;
   const today = new Date().toISOString().split('T')[0];
 
-  // Estado acumulado durante a execução
+  // Estado local por execução — cada invocação cria seu próprio contexto,
+  // garantindo isolamento total entre workers paralelos sem vazamento de estado.
   const filesWritten: string[] = [];
   const stagedFiles = new Map<string, string>(); // path → content
   let prResult: PullRequestResult | null = null;
@@ -403,8 +417,8 @@ async function processDevJob(job: Job<DevAgentJobData>): Promise<unknown> {
 export function createDevAgentWorker() {
   const worker = new Worker<DevAgentJobData>('agent-dev', processDevJob, {
     connection: redisConnection,
-    concurrency: 2,
-    lockDuration: 600_000, // 10 min — DEV pode levar bastante tempo
+    concurrency: 5,          // até 5 histórias implementadas em paralelo
+    lockDuration: 600_000,   // 10 min — renovado automaticamente a cada 5 min pelo BullMQ
   });
 
   worker.on('completed', (job, result) => {

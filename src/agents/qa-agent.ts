@@ -14,7 +14,7 @@ import {
   getPrFiles,
   type PrFileEntry,
 } from '../github/client';
-import { devAgentQueue } from './dev-agent';
+import { devAgentQueue, DEV_JOB_PRIORITY } from './dev-agent';
 import { childLogger } from '../lib/logger';
 import { runAgentLoop } from '../lib/agent-loop';
 import { QA_SYSTEM_PROMPT } from './prompts/qa-system-prompt';
@@ -474,7 +474,8 @@ async function runQaAgent(
             correctionMode: true,
             correctionIteration: iteration,
           },
-          { jobId: `dev-correction-${jiraKey}-${correctionRunId}` },
+          // HIGH: correções bloqueiam o Agente QA em espera — avançam na frente de jobs normais
+          { jobId: `dev-correction-${jiraKey}-${correctionRunId}`, priority: DEV_JOB_PRIORITY.HIGH },
         );
       }
 
