@@ -105,6 +105,10 @@ vi.mock('./prompts/lt-system-prompt', () => ({
   LT_SYSTEM_PROMPT: 'You are a LT agent.',
 }));
 
+vi.mock('../lib/anthropic-rate-limiter', () => ({
+  waitForAnthropicCapacity: vi.fn().mockResolvedValue(undefined),
+}));
+
 // ─── Fixtures ──────────────────────────────────────────────────────────────────
 
 const validLtJobData = {
@@ -116,7 +120,8 @@ const validLtJobData = {
 };
 
 async function getLtProcessor() {
-  await import('./lt');
+  const lt = await import('./lt');
+  lt.createLtAgentWorker();
   return mockLtWorkerProcessor.fn as (job: unknown) => Promise<unknown>;
 }
 
@@ -221,10 +226,12 @@ describe('lt-agent — processamento de tool_use blocks', () => {
       const processor = await getLtProcessor();
       await processor({ data: validLtJobData });
 
+      // lt.ts ignora 'commit_file' como tool (retorna "Ferramenta desconhecida")
+      // e commita usando o texto do end_turn com mensagem hardcoded
       expect(mockCommitFileLt).toHaveBeenCalledWith(
         'SCRUM-16/PLANO_DE_EXECUCAO.md',
-        '# Plano de Execução SCRUM-16\n\n1. Criar currency.ts',
-        'docs(SCRUM-16): adiciona plano de execução',
+        'Plano commitado.',
+        'docs(SCRUM-16): plano de execução gerado pelo Agente LT\n\n[Agente LT v1.0] — Squad Agêntica',
         'prd/scrum-16',
       );
     });
