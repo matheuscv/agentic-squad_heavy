@@ -55,7 +55,7 @@ const DEV_TOOLS: Anthropic.Tool[] = [
       properties: {
         file_path: {
           type: 'string',
-          description: 'Caminho do arquivo a partir da raiz do repositório (ex: src/db/schema.ts, SCRUM-15/PRD.md)',
+          description: 'Caminho de um arquivo listado nas tasks do PLANO ou de contexto do projeto (ex: "SCRUM-16/PLANO_DE_EXECUCAO.md", "README.md", "package.json") — nunca um arquivo não mencionado no PLANO',
         },
         branch: {
           type: 'string',
@@ -85,7 +85,7 @@ const DEV_TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'write_github_file',
-    description: 'Prepara (staging) um arquivo para o próximo commit. Chame create_github_commit quando quiser persistir um conjunto de arquivos de uma vez.',
+    description: 'Prepara (staging) um arquivo para o próximo commit. Use APENAS para arquivos explicitamente listados nas tasks do PLANO_DE_EXECUCAO.md e seus arquivos de teste correspondentes — nunca para arquivos fora do escopo do PLANO. Chame create_github_commit quando quiser persistir.',
     input_schema: {
       type: 'object' as const,
       properties: {

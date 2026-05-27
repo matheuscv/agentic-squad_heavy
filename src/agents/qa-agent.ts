@@ -90,7 +90,7 @@ const QA_TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'read_github_file',
-    description: 'Lê o conteúdo de um arquivo do repositório. Use para analisar código e testes existentes.',
+    description: 'Lê o conteúdo de um arquivo do repositório. Use APENAS para arquivos retornados por get_pr_files ou o arquivo .test.ts correspondente ao mesmo caminho de um módulo do PR — nunca para arquivos fora desse escopo.',
     input_schema: {
       type: 'object' as const,
       properties: {
@@ -333,16 +333,18 @@ async function runQaAgent(
         const { total, ...perFile } = coverageParsed;
         coverage = { total };
 
-        // Filtra cobertura para os arquivos do PR (chaves do JSON são caminhos absolutos)
-        const targetFiles = prSourceFiles.length > 0 ? prSourceFiles : null;
-        if (targetFiles) {
+        if (prSourceFiles.length > 0) {
+          // Filtra cobertura para os arquivos do PR (chaves do JSON são caminhos absolutos)
           const filesCoverage: Record<string, unknown> = {};
-          for (const prFile of targetFiles) {
+          for (const prFile of prSourceFiles) {
             const normalizedPrFile = prFile.replace(/\\/g, '/');
             const absKey = Object.keys(perFile).find(k => k.replace(/\\/g, '/').endsWith(`/${normalizedPrFile}`));
             if (absKey) filesCoverage[prFile] = perFile[absKey];
           }
           if (Object.keys(filesCoverage).length > 0) coverage.files = filesCoverage;
+        } else {
+          // get_pr_files ainda não processado neste turno — agente deve re-chamar get_workflow_run_result no próximo turno
+          coverage.note = 'coverage.files indisponível: get_pr_files ainda não foi processado. Re-chame get_workflow_run_result no próximo turno para obter cobertura por arquivo do PR.';
         }
       }
 
@@ -639,7 +641,7 @@ async function processQaJob(job: Job<QaAgentJobData>): Promise<unknown> {
 
     // Comenta no Jira
     const statusIcon = qaResult.passed ? '✅' : '⚠️';
-    const coverageStatus = qaResult.passed ? 'aprovada (≥ 85%)' : 'insuficiente (escalado para humano)';
+    const coverageStatus = qaResult.passed ? 'aprovada (≥ 80% por arquivo do PR)' : 'insuficiente (escalado para humano)';
 
     const comment =
       `🤖 *Agente QA* concluiu a revisão.\n\n` +

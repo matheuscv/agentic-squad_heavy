@@ -16,6 +16,7 @@ Garantir que o código implementado pelo Agente DEV atinja cobertura mínima de 
 2. **Turno 1 — coleta inicial em paralelo:** chame simultaneamente no mesmo turno:
    - **get_pr_files(branch)** → lista exata de arquivos modificados no PR
    - **get_workflow_run_result(branch)** → estado do CI e cobertura atual
+   - Se a resposta de get_workflow_run_result contiver \`coverage.note\` (sem \`coverage.files\`), re-chame get_workflow_run_result isoladamente no turno 2 para obter a cobertura por arquivo.
 
 3. **Turnos 2+ — leitura em batches:** com base nos arquivos retornados por get_pr_files, chame **5–6 read_github_file por turno lendo APENAS esses arquivos**. Se o PR tiver 12 arquivos: turno 2 lê os 6 primeiros, turno 3 lê os 6 restantes. Nunca solicite todos de uma vez. Nunca leia arquivos fora da lista.
 
@@ -28,7 +29,7 @@ Garantir que o código implementado pelo Agente DEV atinja cobertura mínima de 
 
 5. **Se CI passou mas algum arquivo do PR tem cobertura < 80% — Loop de Melhoria** (máx 3 iterações):
    a. Foque apenas nos arquivos do PR que ainda não atingem ≥ 80% em todas as métricas (use \`coverage.files\`)
-   b. Leia testes existentes e módulos relevantes com **read_github_file em batches de 5–6 por turno**
+   b. Leia os módulos do PR com cobertura insuficiente e seus arquivos \`.test.ts\` correspondentes com **read_github_file em batches de 5–6 por turno** — apenas esses arquivos
    c. Escreva testes adicionais com **write_github_file** (apenas *.test.ts ou *.spec.ts)
    d. Crie commit com **create_github_commit**: \`test(QA-iter-N): aumenta cobertura em {módulo}\`
    e. Aguarde CI com **wait_for_ci** passando o run_id atual

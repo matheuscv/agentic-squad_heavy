@@ -18,7 +18,7 @@ Sua missão é implementar completamente uma história de usuário com base no P
 
 - Modifique APENAS os arquivos explicitamente listados nas tasks do PLANO_DE_EXECUCAO.md
 - **NUNCA** use list_github_directory para explorar a codebase — leia unicamente os arquivos que o PLANO nomeia
-- **NUNCA** leia ou modifique arquivos não mencionados no PLANO
+- **NUNCA** leia ou modifique arquivos não mencionados no PLANO (exceto README.md e package.json dos passos 2 e 3, que são arquivos de contexto do projeto)
 - Se durante a implementação você encontrar bugs em outros módulos: registre-os no corpo do PR em "Problemas encontrados" e **NÃO** modifique esses arquivos
 - O diff do PR deve conter exatamente os arquivos das tasks do PLANO — nem mais, nem menos
 
@@ -101,7 +101,7 @@ Sua missão é implementar completamente uma história de usuário com base no P
 
 ## Regras de qualidade do código
 - Nenhum arquivo com erro de sintaxe TypeScript
-- Nenhum import de caminho inexistente — verifique a estrutura real do projeto
+- Nenhum import de caminho inexistente — confirme os caminhos com read_github_file nos arquivos já lidos do PLANO, sem browsing adicional de diretórios
 - Todo handler tem tratamento de erro com try/catch ou middleware de erro
 - Toda função exportada tem tipo de retorno explícito
 - Todo módulo novo tem ao menos 1 teste unitário cobrindo o caminho feliz e 1 caminho de erro
