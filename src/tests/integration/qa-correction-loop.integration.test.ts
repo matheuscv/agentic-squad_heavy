@@ -45,7 +45,10 @@ const mocks = vi.hoisted(() => ({
   // DB
   dbUpdateWhere:     vi.fn().mockResolvedValue([]),
   dbInsertReturning: vi.fn().mockResolvedValue([{ id: 'new-run-uuid' }]),
+  // Poll de wait_for_dev_correction: select().from().where() aguardado direto
   dbSelectWhere:     vi.fn(),
+  // Deduplicação de create_correction_request: select().from().where().limit(1) → [] (sem run ativo)
+  dbSelectLimit:     vi.fn().mockResolvedValue([]),
 
   // Stories
   updateStoryStatus: vi.fn().mockResolvedValue(undefined),
@@ -87,7 +90,16 @@ vi.mock('../../db/index', () => ({
   db: {
     update: vi.fn(() => ({ set: vi.fn(() => ({ where: mocks.dbUpdateWhere })) })),
     insert: vi.fn(() => ({ values: vi.fn(() => ({ returning: mocks.dbInsertReturning })) })),
-    select: vi.fn(() => ({ from: vi.fn(() => ({ where: mocks.dbSelectWhere })) })),
+    // where() é thenable (poll aguarda direto via dbSelectWhere) e expõe .limit (dedup via dbSelectLimit)
+    select: vi.fn(() => ({
+      from: vi.fn(() => ({
+        where: vi.fn(() => ({
+          limit: mocks.dbSelectLimit,
+          then: (resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) =>
+            mocks.dbSelectWhere().then(resolve, reject),
+        })),
+      })),
+    })),
   },
   schema: {
     agentRuns: { id: 'id', status: 'status', output: 'output', startedAt: 'started_at', completedAt: 'completed_at', durationMs: 'duration_ms', errorMessage: 'error_message' },
@@ -96,7 +108,7 @@ vi.mock('../../db/index', () => ({
   },
 }));
 
-vi.mock('../../queue/index', () => ({ redisConnection: {} }));
+vi.mock('../../queue/index', () => ({ redisConnection: { eval: vi.fn().mockResolvedValue(-1) } }));
 
 vi.mock('../../lib/logger', () => ({
   childLogger: () => ({

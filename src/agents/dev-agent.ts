@@ -7,7 +7,7 @@ import { redisConnection } from '../queue/index';
 import { moveCardTo, addComment } from '../jira/client';
 import { createBranch, readFile, listDirectory, commitFiles, createPullRequest, type PullRequestResult } from '../github/client';
 import { childLogger } from '../lib/logger';
-import { waitForAnthropicCapacity } from '../lib/anthropic-rate-limiter';
+import { runAgentLoop } from '../lib/agent-loop';
 import { DEV_SYSTEM_PROMPT } from './prompts/dev-system-prompt';
 
 const log = childLogger({ module: 'agent.dev' });
@@ -191,25 +191,71 @@ Lembre-se:
 
   jobLog.debug({ model }, 'iniciando loop de tool-use com Claude');
 
-  for (let turn = 0; turn < 40; turn++) {
-    await waitForAnthropicCapacity(redisConnection);
-    const response = await anthropic.messages.create({
-      model,
-      max_tokens: 8192,
-      system: DEV_SYSTEM_PROMPT,
-      tools: DEV_TOOLS,
-      messages,
-    });
+  const dispatchTool = async (block: Anthropic.ToolUseBlock): Promise<string> => {
+    if (block.name === 'read_github_file') {
+      const { file_path, branch } = block.input as { file_path: string; branch?: string };
+      const content = await readFile(file_path, branch);
+      jobLog.debug({ file_path, branch, found: content !== null }, 'read_github_file executado');
+      return content ?? '(arquivo não encontrado)';
+    }
 
-    jobLog.debug(
-      { turn, stop_reason: response.stop_reason, usage: response.usage },
-      'resposta do Claude recebida',
-    );
+    if (block.name === 'list_github_directory') {
+      const { dir_path, branch } = block.input as { dir_path: string; branch?: string };
+      const entries = await listDirectory(dir_path, branch);
+      jobLog.debug({ dir_path, count: entries.length }, 'list_github_directory executado');
+      return JSON.stringify(entries);
+    }
 
-    messages.push({ role: 'assistant', content: response.content });
+    if (block.name === 'write_github_file') {
+      const { file_path, content } = block.input as { file_path: string; content: string };
+      stagedFiles.set(file_path, content);
+      jobLog.debug({ file_path, total_staged: stagedFiles.size }, 'arquivo preparado para commit');
+      return JSON.stringify({ staged: true, file_path, total_staged: stagedFiles.size });
+    }
 
-    // Resposta final
-    if (response.stop_reason === 'end_turn') {
+    if (block.name === 'create_github_commit') {
+      const { commit_message } = block.input as { commit_message: string };
+      if (stagedFiles.size === 0) {
+        return JSON.stringify({ success: false, reason: 'nenhum arquivo preparado para commit' });
+      }
+      const batch = Array.from(stagedFiles.entries()).map(([path, content]) => ({ path, content }));
+      const commitResult = await commitFiles(batch, commit_message, devBranch);
+      for (const { path } of batch) filesWritten.push(path);
+      stagedFiles.clear();
+      jobLog.info({ sha: commitResult.sha, files: batch.length }, 'commit atômico criado');
+      return JSON.stringify({ success: true, sha: commitResult.sha, files_committed: batch.length });
+    }
+
+    if (block.name === 'create_pull_request') {
+      const { title, body } = block.input as { title: string; body: string };
+      // Commit automático de arquivos ainda em staging antes de criar o PR
+      if (stagedFiles.size > 0) {
+        const remaining = Array.from(stagedFiles.entries()).map(([path, content]) => ({ path, content }));
+        const autoCommit = await commitFiles(remaining, 'chore: commit final de arquivos pendentes', devBranch);
+        for (const { path } of remaining) filesWritten.push(path);
+        stagedFiles.clear();
+        jobLog.info({ sha: autoCommit.sha, files: remaining.length }, 'auto-commit de arquivos pendentes antes do PR');
+      }
+      prResult = await createPullRequest(title, body, devBranch);
+      jobLog.info({ prNumber: prResult.number, prHtmlUrl: prResult.html_url }, 'PR criado');
+      return JSON.stringify(prResult);
+    }
+
+    return `Ferramenta desconhecida: ${block.name}`;
+  };
+
+  return runAgentLoop<DevAgentResult>({
+    anthropic,
+    redis: redisConnection,
+    model,
+    system: DEV_SYSTEM_PROMPT,
+    tools: DEV_TOOLS,
+    messages,
+    maxTurns: 40,
+    log: jobLog,
+    label: 'DEV',
+    dispatchTool,
+    onEndTurn: () => {
       if (!correctionMode && !prResult) {
         throw new Error('Agente DEV encerrou sem criar o Pull Request — verifique o loop de tools');
       }
@@ -224,81 +270,8 @@ Lembre-se:
         filesWritten,
         branch: devBranch,
       };
-    }
-
-    // Executa ferramentas
-    if (response.stop_reason === 'tool_use') {
-      const toolResults: Anthropic.ToolResultBlockParam[] = [];
-
-      for (const block of response.content) {
-        if (block.type !== 'tool_use') continue;
-
-        let result: string;
-        try {
-          if (block.name === 'read_github_file') {
-            const { file_path, branch } = block.input as { file_path: string; branch?: string };
-            const content = await readFile(file_path, branch);
-            result = content ?? '(arquivo não encontrado)';
-            jobLog.debug({ file_path, branch, found: content !== null }, 'read_github_file executado');
-
-          } else if (block.name === 'list_github_directory') {
-            const { dir_path, branch } = block.input as { dir_path: string; branch?: string };
-            const entries = await listDirectory(dir_path, branch);
-            result = JSON.stringify(entries);
-            jobLog.debug({ dir_path, count: entries.length }, 'list_github_directory executado');
-
-          } else if (block.name === 'write_github_file') {
-            const { file_path, content } = block.input as { file_path: string; content: string };
-            stagedFiles.set(file_path, content);
-            result = JSON.stringify({ staged: true, file_path, total_staged: stagedFiles.size });
-            jobLog.debug({ file_path, total_staged: stagedFiles.size }, 'arquivo preparado para commit');
-
-          } else if (block.name === 'create_github_commit') {
-            const { commit_message } = block.input as { commit_message: string };
-            if (stagedFiles.size === 0) {
-              result = JSON.stringify({ success: false, reason: 'nenhum arquivo preparado para commit' });
-            } else {
-              const batch = Array.from(stagedFiles.entries()).map(([path, content]) => ({ path, content }));
-              const commitResult = await commitFiles(batch, commit_message, devBranch);
-              for (const { path } of batch) filesWritten.push(path);
-              stagedFiles.clear();
-              result = JSON.stringify({ success: true, sha: commitResult.sha, files_committed: batch.length });
-              jobLog.info({ sha: commitResult.sha, files: batch.length }, 'commit atômico criado');
-            }
-
-          } else if (block.name === 'create_pull_request') {
-            const { title, body } = block.input as { title: string; body: string };
-            // Commit automático de arquivos ainda em staging antes de criar o PR
-            if (stagedFiles.size > 0) {
-              const remaining = Array.from(stagedFiles.entries()).map(([path, content]) => ({ path, content }));
-              const autoCommit = await commitFiles(remaining, 'chore: commit final de arquivos pendentes', devBranch);
-              for (const { path } of remaining) filesWritten.push(path);
-              stagedFiles.clear();
-              jobLog.info({ sha: autoCommit.sha, files: remaining.length }, 'auto-commit de arquivos pendentes antes do PR');
-            }
-            prResult = await createPullRequest(title, body, devBranch);
-            result = JSON.stringify(prResult);
-            jobLog.info({ prNumber: prResult.number, prHtmlUrl: prResult.html_url }, 'PR criado');
-
-          } else {
-            result = `Ferramenta desconhecida: ${block.name}`;
-          }
-        } catch (err) {
-          result = `Erro ao executar ferramenta ${block.name}: ${(err as Error).message}`;
-          jobLog.warn({ tool: block.name, err: (err as Error).message }, 'ferramenta retornou erro');
-        }
-
-        toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: result });
-      }
-
-      messages.push({ role: 'user', content: toolResults });
-      continue;
-    }
-
-    throw new Error(`stop_reason inesperado: ${response.stop_reason}`);
-  }
-
-  throw new Error('Agente DEV excedeu o limite de 40 turnos sem concluir a implementação');
+    },
+  });
 }
 
 // ─── Processador do job DEV ───────────────────────────────────────────────────

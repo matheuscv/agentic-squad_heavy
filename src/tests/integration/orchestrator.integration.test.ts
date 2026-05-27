@@ -20,6 +20,8 @@ const mocks = vi.hoisted(() => ({
   addComment:  vi.fn().mockResolvedValue(undefined),
   dbUpdateWhere:     vi.fn().mockResolvedValue([]),
   dbInsertReturning: vi.fn().mockResolvedValue([{ id: 'test-run-uuid' }]),
+  // Deduplicação em dispatchAgent: select().from().where().limit(1) → [] (nenhum run ativo)
+  dbSelectLimit:     vi.fn().mockResolvedValue([]),
   // Valores literais em vi.hoisted (não pode referenciar imports)
   upsertStory: vi.fn().mockResolvedValue({
     id:          'aaaaaaaa-0000-0000-0000-000000000050',
@@ -58,6 +60,7 @@ vi.mock('../../db/index', () => ({
   db: {
     update: vi.fn(() => ({ set: vi.fn(() => ({ where: mocks.dbUpdateWhere })) })),
     insert: vi.fn(() => ({ values: vi.fn(() => ({ returning: mocks.dbInsertReturning })) })),
+    select: vi.fn(() => ({ from: vi.fn(() => ({ where: vi.fn(() => ({ limit: mocks.dbSelectLimit })) })) })),
   },
   schema: {
     agentRuns: { id: 'id', storyId: 'story_id', agentType: 'agent_type', status: 'status', input: 'input', output: 'output', startedAt: 'started_at', completedAt: 'completed_at' },
@@ -66,7 +69,7 @@ vi.mock('../../db/index', () => ({
 }));
 
 vi.mock('../../queue/index', () => ({
-  redisConnection: {},
+  redisConnection: { eval: vi.fn().mockResolvedValue(-1) },
 }));
 
 vi.mock('../../lib/logger', () => ({

@@ -14,50 +14,11 @@ import {
 } from '../github/client';
 import { devAgentQueue } from './dev-agent';
 import { childLogger } from '../lib/logger';
-import { waitForAnthropicCapacity } from '../lib/anthropic-rate-limiter';
+import { runAgentLoop } from '../lib/agent-loop';
 import { QA_SYSTEM_PROMPT } from './prompts/qa-system-prompt';
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-// Chama a API Anthropic com retry automático em rate limit (429).
-async function callClaudeWithRetry(
-  create: () => Promise<Anthropic.Message>,
-  onRateLimit: (attempt: number, waitMs: number) => void,
-): Promise<Anthropic.Message> {
-  for (let attempt = 0; attempt < 4; attempt++) {
-    try {
-      return await create();
-    } catch (err: unknown) {
-      if ((err as { status?: number }).status === 429 && attempt < 3) {
-        const waitMs = 65_000 * (attempt + 1);
-        onRateLimit(attempt + 1, waitMs);
-        await sleep(waitMs);
-        continue;
-      }
-      throw err;
-    }
-  }
-  throw new Error('unreachable');
-}
-
-// Substitui o conteúdo de tool_results antigos por placeholder para evitar explosão de contexto.
-// Mantém intactos os últimos keepLastTurns turnos (cada turno = 1 assistant + 1 user).
-function pruneOldToolResults(messages: Anthropic.MessageParam[], keepLastTurns: number = 5): void {
-  const keepCount = keepLastTurns * 2 + 1; // +1 para a mensagem inicial do usuário
-  if (messages.length <= keepCount) return;
-  const pruneUntil = messages.length - keepCount;
-  for (let i = 1; i < pruneUntil; i++) {
-    const msg = messages[i];
-    if (msg.role === 'user' && Array.isArray(msg.content)) {
-      msg.content = (msg.content as Anthropic.ToolResultBlockParam[]).map((block) =>
-        block.type === 'tool_result'
-          ? { ...block, content: '[omitido — conteúdo removido para controle de contexto]' }
-          : block,
-      );
-    }
-  }
 }
 
 const log = childLogger({ module: 'agent.qa' });
@@ -329,276 +290,249 @@ async function runQaAgent(
 
   jobLog.info({ model }, 'iniciando loop de tool-use QA com Claude');
 
-  let lastInputTokens = 8_000;
+  const dispatchTool = async (block: Anthropic.ToolUseBlock): Promise<string> => {
+    if (block.name === 'get_workflow_run_result') {
+      const { branch } = block.input as { branch: string };
+      const run = await getLatestWorkflowRun(branch);
+      const coverageRaw = await readFile('.qa-coverage.json', branch);
+      const coverageParsed = coverageRaw ? JSON.parse(coverageRaw) : null;
+      // Envia apenas o resumo total — dados por arquivo podem ter centenas de linhas
+      const coverage = coverageParsed?.total ? { total: coverageParsed.total } : coverageParsed;
+      jobLog.debug({ branch, runId: run?.runId, conclusion: run?.conclusion }, 'workflow run obtido');
+      return JSON.stringify({ run, coverage });
+    }
 
-  // QA pode ter ciclos de espera de 10 min cada → até 50 turnos
-  for (let turn = 0; turn < 50; turn++) {
-    await waitForAnthropicCapacity(redisConnection, lastInputTokens);
-    const response = await callClaudeWithRetry(
-      () => anthropic.messages.create({ model, max_tokens: 8192, system: QA_SYSTEM_PROMPT, tools: QA_TOOLS, messages }),
-      (attempt, waitMs) => jobLog.warn({ turn, attempt, waitMs }, 'rate limit 429 — aguardando janela de tokens'),
-    );
-    lastInputTokens = response.usage.input_tokens;
+    if (block.name === 'read_github_file') {
+      const { file_path, branch } = block.input as { file_path: string; branch?: string };
+      const content = await readFile(file_path, branch ?? devBranch);
+      return content ?? '(arquivo não encontrado)';
+    }
 
-    jobLog.debug(
-      { turn, stop_reason: response.stop_reason, usage: response.usage },
-      'resposta do Claude recebida',
-    );
+    if (block.name === 'list_github_directory') {
+      const { dir_path, branch } = block.input as { dir_path: string; branch?: string };
+      const entries = await listDirectory(dir_path, branch ?? devBranch);
+      return JSON.stringify(entries);
+    }
 
-    messages.push({ role: 'assistant', content: response.content });
+    if (block.name === 'write_github_file') {
+      const { file_path, content } = block.input as { file_path: string; content: string };
+      if (!file_path.endsWith('.test.ts') && !file_path.endsWith('.spec.ts')) {
+        return JSON.stringify({ error: 'Apenas arquivos .test.ts ou .spec.ts são permitidos' });
+      }
+      stagedFiles.set(file_path, content);
+      jobLog.debug({ file_path }, 'arquivo de teste preparado para staging');
+      return JSON.stringify({ staged: true, file_path, total_staged: stagedFiles.size });
+    }
 
-    if (response.stop_reason === 'end_turn') {
+    if (block.name === 'create_github_commit') {
+      const { commit_message } = block.input as { commit_message: string };
+      if (stagedFiles.size === 0) {
+        return JSON.stringify({ success: false, reason: 'nenhum arquivo em staging' });
+      }
+      const batch = Array.from(stagedFiles.entries()).map(([path, content]) => ({ path, content }));
+      const commitResult = await commitFiles(batch, commit_message, devBranch);
+      stagedFiles.clear();
+      jobLog.info({ sha: commitResult.sha, files: batch.length }, 'commit atômico de testes criado');
+      return JSON.stringify({ success: true, sha: commitResult.sha, files_committed: batch.length });
+    }
+
+    if (block.name === 'wait_for_ci') {
+      const { branch, current_run_id } = block.input as { branch: string; current_run_id: number };
+      jobLog.info({ branch, current_run_id }, 'aguardando próximo run do CI');
+      const newRun = await waitForWorkflowCompletion(branch, current_run_id, 600_000);
+      jobLog.info({ newRun }, 'espera pelo CI concluída');
+      return newRun ? JSON.stringify(newRun) : JSON.stringify({ timeout: true });
+    }
+
+    if (block.name === 'create_correction_request') {
+      const { iteration, description, files_with_issues, failing_tests, coverage_gaps } = block.input as {
+        iteration: number;
+        description: string;
+        files_with_issues?: string[];
+        failing_tests?: string[];
+        coverage_gaps?: Record<string, unknown>;
+      };
+
+      // 1. Gera e persiste CORRECTION_REQUEST.md no branch
+      const correctionDoc = [
+        `# Pedido de Correção — Iteração ${iteration}/3`,
+        '',
+        `## Problema detectado`,
+        description,
+        '',
+        files_with_issues?.length
+          ? `## Arquivos com problemas\n${files_with_issues.map((f) => `- \`${f}\``).join('\n')}`
+          : '',
+        failing_tests?.length
+          ? `## Testes falhando\n${failing_tests.map((t) => `- ${t}`).join('\n')}`
+          : '',
+        coverage_gaps
+          ? `## Cobertura insuficiente\n\`\`\`json\n${JSON.stringify(coverage_gaps, null, 2)}\n\`\`\``
+          : '',
+        '',
+        `---`,
+        `_Gerado pelo Agente QA em ${new Date().toISOString()}_`,
+      ].filter(Boolean).join('\n');
+
+      await commitFiles(
+        [{ path: 'CORRECTION_REQUEST.md', content: correctionDoc }],
+        `chore(QA-iter-${iteration}): cria pedido de correção DEV`,
+        devBranch,
+      );
+
+      // 2. Deduplicação — reutiliza DEV correction já ativo para esta story
+      const activeDevRuns = await db
+        .select({ id: schema.agentRuns.id })
+        .from(schema.agentRuns)
+        .where(
+          and(
+            eq(schema.agentRuns.storyId, storyId),
+            eq(schema.agentRuns.agentType, 'dev'),
+            inArray(schema.agentRuns.status, ['pending', 'running']),
+          ),
+        )
+        .limit(1);
+
+      let correctionRunId: string;
+
+      if (activeDevRuns.length > 0) {
+        correctionRunId = activeDevRuns[0]!.id;
+        jobLog.warn({ correctionRunId, iteration }, 'DEV correction já ativo — reutilizando agentRunId existente');
+      } else {
+        // 3. Registra agentRun pendente para o DEV correction
+        const [corrRun] = await db
+          .insert(schema.agentRuns)
+          .values({
+            storyId,
+            agentType: 'dev',
+            status: 'pending',
+            input: { jiraKey, correctionMode: true, iteration },
+          })
+          .returning({ id: schema.agentRuns.id });
+
+        correctionRunId = corrRun!.id;
+
+        // 4. Enfileira job DEV no modo correção
+        await devAgentQueue.add(
+          'dev:correction',
+          {
+            storyId,
+            jiraKey,
+            agentRunId: correctionRunId,
+            summary,
+            fromStatus: 'Em QA',
+            correctionMode: true,
+            correctionIteration: iteration,
+          },
+          { jobId: `dev-correction-${jiraKey}-${correctionRunId}` },
+        );
+      }
+
+      // 5. Comenta no Jira
+      try {
+        await addComment(
+          jiraKey,
+          `🔄 *Agente QA* — pedido de correção (iteração ${iteration}/3).\n\n` +
+            `*Problema:* ${description}\n\n` +
+            `O Agente DEV irá implementar as correções.`,
+        );
+      } catch (err) {
+        jobLog.warn({ err: (err as Error).message }, 'falha ao comentar pedido de correção');
+      }
+
+      jobLog.info({ correctionRunId, iteration }, 'pedido de correção criado e DEV enfileirado');
+      return JSON.stringify({ agentRunId: correctionRunId, requested: true, iteration });
+    }
+
+    if (block.name === 'wait_for_dev_correction') {
+      const { agent_run_id } = block.input as { agent_run_id: string };
+      const deadline = Date.now() + 1_200_000; // 20 min
+      const pollInterval = parseInt(process.env['QA_POLL_INTERVAL_MS'] ?? '30000', 10);
+      let pollResult: string | null = null;
+
+      while (Date.now() < deadline) {
+        await sleep(pollInterval);
+        const rows = await db
+          .select({
+            status: schema.agentRuns.status,
+            output: schema.agentRuns.output,
+            errorMessage: schema.agentRuns.errorMessage,
+          })
+          .from(schema.agentRuns)
+          .where(eq(schema.agentRuns.id, agent_run_id));
+
+        const run = rows[0];
+        if (run?.status === 'completed' || run?.status === 'failed') {
+          pollResult = JSON.stringify({ status: run.status, output: run.output, error: run.errorMessage });
+          break;
+        }
+      }
+
+      jobLog.info({ agent_run_id }, `espera por DEV correction: ${pollResult ? 'resolvido' : 'timeout'}`);
+      return pollResult ?? JSON.stringify({ timeout: true });
+    }
+
+    if (block.name === 'escalate_to_human') {
+      const { reason, final_coverage } = block.input as {
+        reason: string;
+        final_coverage?: Record<string, unknown>;
+      };
+      jobLog.warn({ reason, final_coverage }, 'QA escalando para humano — cobertura insuficiente');
+      try {
+        await addComment(
+          jiraKey,
+          `⚠️ *Agente QA* — cobertura insuficiente após 3 iterações.\n\n` +
+            `*Motivo:* ${reason}\n\n` +
+            `*Cobertura final:* \`${JSON.stringify(final_coverage ?? {})}\`\n\n` +
+            `Ação necessária: aumentar manualmente a cobertura de testes antes de mover o card.`,
+        );
+      } catch (err) {
+        jobLog.warn({ err: (err as Error).message }, 'falha ao escalar via Jira — continuando');
+      }
+      return JSON.stringify({ escalated: true });
+    }
+
+    if (block.name === 'finish_qa_review') {
+      const { passed, coverage, summary: qaSummary, tests_written, iterations } = block.input as {
+        passed: boolean;
+        coverage?: Record<string, unknown>;
+        summary: string;
+        tests_written?: string[];
+        iterations: number;
+      };
+      qaResult = {
+        passed,
+        iterations,
+        finalCoverage: coverage ?? null,
+        testsWritten: tests_written ?? [],
+        summary: qaSummary,
+      };
+      jobLog.info({ passed, iterations, testsWritten: tests_written?.length ?? 0 }, 'QA review finalizado');
+      return JSON.stringify({ finalized: true });
+    }
+
+    return `Ferramenta desconhecida: ${block.name}`;
+  };
+
+  return runAgentLoop<QaAgentResult>({
+    anthropic,
+    redis: redisConnection,
+    model,
+    system: QA_SYSTEM_PROMPT,
+    tools: QA_TOOLS,
+    messages,
+    maxTurns: 50, // QA pode ter ciclos de espera de 10 min cada
+    log: jobLog,
+    label: 'QA',
+    maxToolResultChars: 4_000,
+    dispatchTool,
+    onEndTurn: () => {
       if (!qaResult) {
         throw new Error('Agente QA encerrou sem chamar finish_qa_review');
       }
       return qaResult;
-    }
-
-    if (response.stop_reason === 'tool_use') {
-      const toolResults: Anthropic.ToolResultBlockParam[] = [];
-
-      for (const block of response.content) {
-        if (block.type !== 'tool_use') continue;
-
-        let result: string;
-        try {
-          if (block.name === 'get_workflow_run_result') {
-            const { branch } = block.input as { branch: string };
-            const run = await getLatestWorkflowRun(branch);
-            const coverageRaw = await readFile('.qa-coverage.json', branch);
-            const coverageParsed = coverageRaw ? JSON.parse(coverageRaw) : null;
-            // Envia apenas o resumo total — dados por arquivo podem ter centenas de linhas
-            const coverage = coverageParsed?.total ? { total: coverageParsed.total } : coverageParsed;
-            result = JSON.stringify({ run, coverage });
-            jobLog.debug({ branch, runId: run?.runId, conclusion: run?.conclusion }, 'workflow run obtido');
-
-          } else if (block.name === 'read_github_file') {
-            const { file_path, branch } = block.input as { file_path: string; branch?: string };
-            const content = await readFile(file_path, branch ?? devBranch);
-            const MAX_FILE_CHARS = 4_000;
-            if (content && content.length > MAX_FILE_CHARS) {
-              result = content.slice(0, MAX_FILE_CHARS) + `\n\n[... truncado — ${content.length - MAX_FILE_CHARS} chars omitidos para economizar tokens ...]`;
-            } else {
-              result = content ?? '(arquivo não encontrado)';
-            }
-
-          } else if (block.name === 'list_github_directory') {
-            const { dir_path, branch } = block.input as { dir_path: string; branch?: string };
-            const entries = await listDirectory(dir_path, branch ?? devBranch);
-            result = JSON.stringify(entries);
-
-          } else if (block.name === 'write_github_file') {
-            const { file_path, content } = block.input as { file_path: string; content: string };
-            if (!file_path.endsWith('.test.ts') && !file_path.endsWith('.spec.ts')) {
-              result = JSON.stringify({ error: 'Apenas arquivos .test.ts ou .spec.ts são permitidos' });
-            } else {
-              stagedFiles.set(file_path, content);
-              result = JSON.stringify({ staged: true, file_path, total_staged: stagedFiles.size });
-              jobLog.debug({ file_path }, 'arquivo de teste preparado para staging');
-            }
-
-          } else if (block.name === 'create_github_commit') {
-            const { commit_message } = block.input as { commit_message: string };
-            if (stagedFiles.size === 0) {
-              result = JSON.stringify({ success: false, reason: 'nenhum arquivo em staging' });
-            } else {
-              const batch = Array.from(stagedFiles.entries()).map(([path, content]) => ({ path, content }));
-              const commitResult = await commitFiles(batch, commit_message, devBranch);
-              stagedFiles.clear();
-              result = JSON.stringify({ success: true, sha: commitResult.sha, files_committed: batch.length });
-              jobLog.info({ sha: commitResult.sha, files: batch.length }, 'commit atômico de testes criado');
-            }
-
-          } else if (block.name === 'wait_for_ci') {
-            const { branch, current_run_id } = block.input as { branch: string; current_run_id: number };
-            jobLog.info({ branch, current_run_id }, 'aguardando próximo run do CI');
-            const newRun = await waitForWorkflowCompletion(branch, current_run_id, 600_000);
-            result = newRun ? JSON.stringify(newRun) : JSON.stringify({ timeout: true });
-            jobLog.info({ newRun }, 'espera pelo CI concluída');
-
-          } else if (block.name === 'create_correction_request') {
-            const { iteration, description, files_with_issues, failing_tests, coverage_gaps } = block.input as {
-              iteration: number;
-              description: string;
-              files_with_issues?: string[];
-              failing_tests?: string[];
-              coverage_gaps?: Record<string, unknown>;
-            };
-
-            // 1. Gera e persiste CORRECTION_REQUEST.md no branch
-            const correctionDoc = [
-              `# Pedido de Correção — Iteração ${iteration}/3`,
-              '',
-              `## Problema detectado`,
-              description,
-              '',
-              files_with_issues?.length
-                ? `## Arquivos com problemas\n${files_with_issues.map((f) => `- \`${f}\``).join('\n')}`
-                : '',
-              failing_tests?.length
-                ? `## Testes falhando\n${failing_tests.map((t) => `- ${t}`).join('\n')}`
-                : '',
-              coverage_gaps
-                ? `## Cobertura insuficiente\n\`\`\`json\n${JSON.stringify(coverage_gaps, null, 2)}\n\`\`\``
-                : '',
-              '',
-              `---`,
-              `_Gerado pelo Agente QA em ${new Date().toISOString()}_`,
-            ].filter(Boolean).join('\n');
-
-            await commitFiles(
-              [{ path: 'CORRECTION_REQUEST.md', content: correctionDoc }],
-              `chore(QA-iter-${iteration}): cria pedido de correção DEV`,
-              devBranch,
-            );
-
-            // 2. Deduplicação — reutiliza DEV correction já ativo para esta story
-            const activeDevRuns = await db
-              .select({ id: schema.agentRuns.id })
-              .from(schema.agentRuns)
-              .where(
-                and(
-                  eq(schema.agentRuns.storyId, storyId),
-                  eq(schema.agentRuns.agentType, 'dev'),
-                  inArray(schema.agentRuns.status, ['pending', 'running']),
-                ),
-              )
-              .limit(1);
-
-            let correctionRunId: string;
-
-            if (activeDevRuns.length > 0) {
-              correctionRunId = activeDevRuns[0]!.id;
-              jobLog.warn({ correctionRunId, iteration }, 'DEV correction já ativo — reutilizando agentRunId existente');
-            } else {
-              // 3. Registra agentRun pendente para o DEV correction
-              const [corrRun] = await db
-                .insert(schema.agentRuns)
-                .values({
-                  storyId,
-                  agentType: 'dev',
-                  status: 'pending',
-                  input: { jiraKey, correctionMode: true, iteration },
-                })
-                .returning({ id: schema.agentRuns.id });
-
-              correctionRunId = corrRun!.id;
-
-              // 4. Enfileira job DEV no modo correção
-              await devAgentQueue.add(
-                'dev:correction',
-                {
-                  storyId,
-                  jiraKey,
-                  agentRunId: correctionRunId,
-                  summary,
-                  fromStatus: 'Em QA',
-                  correctionMode: true,
-                  correctionIteration: iteration,
-                },
-                { jobId: `dev-correction-${jiraKey}-${correctionRunId}` },
-              );
-            }
-
-            // 5. Comenta no Jira
-            try {
-              await addComment(
-                jiraKey,
-                `🔄 *Agente QA* — pedido de correção (iteração ${iteration}/3).\n\n` +
-                  `*Problema:* ${description}\n\n` +
-                  `O Agente DEV irá implementar as correções.`,
-              );
-            } catch (err) {
-              jobLog.warn({ err: (err as Error).message }, 'falha ao comentar pedido de correção');
-            }
-
-            result = JSON.stringify({ agentRunId: correctionRunId, requested: true, iteration });
-            jobLog.info({ correctionRunId, iteration }, 'pedido de correção criado e DEV enfileirado');
-
-          } else if (block.name === 'wait_for_dev_correction') {
-            const { agent_run_id } = block.input as { agent_run_id: string };
-            const deadline = Date.now() + 1_200_000; // 20 min
-            const pollInterval = parseInt(process.env['QA_POLL_INTERVAL_MS'] ?? '30000', 10);
-            let pollResult: string | null = null;
-
-            while (Date.now() < deadline) {
-              await sleep(pollInterval);
-              const rows = await db
-                .select({
-                  status: schema.agentRuns.status,
-                  output: schema.agentRuns.output,
-                  errorMessage: schema.agentRuns.errorMessage,
-                })
-                .from(schema.agentRuns)
-                .where(eq(schema.agentRuns.id, agent_run_id));
-
-              const run = rows[0];
-              if (run?.status === 'completed' || run?.status === 'failed') {
-                pollResult = JSON.stringify({ status: run.status, output: run.output, error: run.errorMessage });
-                break;
-              }
-            }
-
-            result = pollResult ?? JSON.stringify({ timeout: true });
-            jobLog.info({ agent_run_id }, `espera por DEV correction: ${pollResult ? 'resolvido' : 'timeout'}`);
-
-          } else if (block.name === 'escalate_to_human') {
-            const { reason, final_coverage } = block.input as {
-              reason: string;
-              final_coverage?: Record<string, unknown>;
-            };
-            jobLog.warn({ reason, final_coverage }, 'QA escalando para humano — cobertura insuficiente');
-            try {
-              await addComment(
-                jiraKey,
-                `⚠️ *Agente QA* — cobertura insuficiente após 3 iterações.\n\n` +
-                  `*Motivo:* ${reason}\n\n` +
-                  `*Cobertura final:* \`${JSON.stringify(final_coverage ?? {})}\`\n\n` +
-                  `Ação necessária: aumentar manualmente a cobertura de testes antes de mover o card.`,
-              );
-            } catch (err) {
-              jobLog.warn({ err: (err as Error).message }, 'falha ao escalar via Jira — continuando');
-            }
-            result = JSON.stringify({ escalated: true });
-
-          } else if (block.name === 'finish_qa_review') {
-            const { passed, coverage, summary: qaSummary, tests_written, iterations } = block.input as {
-              passed: boolean;
-              coverage?: Record<string, unknown>;
-              summary: string;
-              tests_written?: string[];
-              iterations: number;
-            };
-            qaResult = {
-              passed,
-              iterations,
-              finalCoverage: coverage ?? null,
-              testsWritten: tests_written ?? [],
-              summary: qaSummary,
-            };
-            result = JSON.stringify({ finalized: true });
-            jobLog.info({ passed, iterations, testsWritten: tests_written?.length ?? 0 }, 'QA review finalizado');
-
-          } else {
-            result = `Ferramenta desconhecida: ${block.name}`;
-          }
-        } catch (err) {
-          result = `Erro ao executar ${block.name}: ${(err as Error).message}`;
-          jobLog.warn({ tool: block.name, err: (err as Error).message }, 'ferramenta retornou erro');
-        }
-
-        toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: result });
-      }
-
-      messages.push({ role: 'user', content: toolResults });
-      pruneOldToolResults(messages);
-      continue;
-    }
-
-    throw new Error(`stop_reason inesperado: ${response.stop_reason}`);
-  }
-
-  throw new Error('Agente QA excedeu o limite de 50 turnos sem concluir a revisão');
+    },
+  });
 }
 
 // ─── Processador do job QA ────────────────────────────────────────────────────

@@ -7,7 +7,7 @@ import { redisConnection } from '../queue/index';
 import { getIssue, moveCardTo, addComment } from '../jira/client';
 import { commitFile, createBranch, readFile } from '../github/client';
 import { childLogger } from '../lib/logger';
-import { waitForAnthropicCapacity } from '../lib/anthropic-rate-limiter';
+import { runAgentLoop } from '../lib/agent-loop';
 import { PO_SYSTEM_PROMPT } from './prompts/po-system-prompt';
 
 const log = childLogger({ module: 'agent.po' });
@@ -115,25 +115,42 @@ Lembre-se: responda APENAS com o markdown do PRD, começando com "# PRD —".`,
 
   jobLog.debug({ model, jiraKey }, 'iniciando loop de tool-use com Claude');
 
-  for (let turn = 0; turn < 10; turn++) {
-    await waitForAnthropicCapacity(redisConnection);
-    const response = await anthropic.messages.create({
-      model,
-      max_tokens: 8192,
-      system: PO_SYSTEM_PROMPT,
-      tools: PO_TOOLS,
-      messages,
-    });
+  const dispatchTool = async (block: Anthropic.ToolUseBlock): Promise<string> => {
+    if (block.name === 'get_jira_issue') {
+      const { issue_key } = block.input as { issue_key: string };
+      const issue = await getIssue(issue_key);
+      const description = extractTextFromAdf(issue.fields.description);
+      jobLog.debug({ issue_key }, 'ferramenta get_jira_issue executada');
+      return JSON.stringify({
+        key: issue.key,
+        summary: issue.fields.summary,
+        description: description || '(sem descrição)',
+        status: issue.fields.status.name,
+      });
+    }
 
-    jobLog.debug(
-      { turn, stop_reason: response.stop_reason, usage: response.usage },
-      'resposta do Claude recebida',
-    );
+    if (block.name === 'read_github_file') {
+      const { file_path } = block.input as { file_path: string };
+      const content = await readFile(file_path);
+      jobLog.debug({ file_path, found: content !== null }, 'ferramenta read_github_file executada');
+      return content ?? '(arquivo não encontrado no repositório)';
+    }
 
-    messages.push({ role: 'assistant', content: response.content });
+    return `Ferramenta desconhecida: ${block.name}`;
+  };
 
-    // Resposta final — extrai o texto do PRD
-    if (response.stop_reason === 'end_turn') {
+  return runAgentLoop<string>({
+    anthropic,
+    redis: redisConnection,
+    model,
+    system: PO_SYSTEM_PROMPT,
+    tools: PO_TOOLS,
+    messages,
+    maxTurns: 10,
+    log: jobLog,
+    label: 'PO',
+    dispatchTool,
+    onEndTurn: (response) => {
       const raw = response.content
         .filter((b): b is Anthropic.TextBlock => b.type === 'text')
         .map((b) => b.text)
@@ -142,58 +159,8 @@ Lembre-se: responda APENAS com o markdown do PRD, começando com "# PRD —".`,
       const prdContent = extractMarkdownContent(raw);
       if (!prdContent) throw new Error('Claude retornou PRD vazio');
       return prdContent;
-    }
-
-    // Executa as ferramentas solicitadas
-    if (response.stop_reason === 'tool_use') {
-      const toolResults: Anthropic.ToolResultBlockParam[] = [];
-
-      for (const block of response.content) {
-        if (block.type !== 'tool_use') continue;
-
-        let result: string;
-        try {
-          if (block.name === 'get_jira_issue') {
-            const { issue_key } = block.input as { issue_key: string };
-            const issue = await getIssue(issue_key);
-            const description = extractTextFromAdf(issue.fields.description);
-            result = JSON.stringify({
-              key: issue.key,
-              summary: issue.fields.summary,
-              description: description || '(sem descrição)',
-              status: issue.fields.status.name,
-            });
-            jobLog.debug({ issue_key }, 'ferramenta get_jira_issue executada');
-
-          } else if (block.name === 'read_github_file') {
-            const { file_path } = block.input as { file_path: string };
-            const content = await readFile(file_path);
-            result = content ?? '(arquivo não encontrado no repositório)';
-            jobLog.debug({ file_path, found: content !== null }, 'ferramenta read_github_file executada');
-
-          } else {
-            result = `Ferramenta desconhecida: ${block.name}`;
-          }
-        } catch (err) {
-          result = `Erro ao executar ferramenta: ${(err as Error).message}`;
-          jobLog.warn({ tool: block.name, err: (err as Error).message }, 'ferramenta retornou erro');
-        }
-
-        toolResults.push({
-          type: 'tool_result',
-          tool_use_id: block.id,
-          content: result,
-        });
-      }
-
-      messages.push({ role: 'user', content: toolResults });
-      continue;
-    }
-
-    throw new Error(`stop_reason inesperado: ${response.stop_reason}`);
-  }
-
-  throw new Error('Agente PO excedeu o limite de 10 turnos sem gerar o PRD');
+    },
+  });
 }
 
 // ─── Processador do job PO ────────────────────────────────────────────────────

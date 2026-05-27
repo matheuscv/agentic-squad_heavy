@@ -7,7 +7,7 @@ import { redisConnection } from '../queue/index';
 import { moveCardTo, addComment } from '../jira/client';
 import { commitFile, readFile } from '../github/client';
 import { childLogger } from '../lib/logger';
-import { waitForAnthropicCapacity } from '../lib/anthropic-rate-limiter';
+import { runAgentLoop } from '../lib/agent-loop';
 import { LT_SYSTEM_PROMPT } from './prompts/lt-system-prompt';
 
 const log = childLogger({ module: 'agent.lt' });
@@ -96,24 +96,29 @@ Lembre-se: responda APENAS com o markdown do plano, começando com "# Plano de E
   const jobLog = log.child({ jiraKey, agentRunId });
   jobLog.debug({ model, prdBranch }, 'iniciando loop de tool-use com Claude');
 
-  for (let turn = 0; turn < 10; turn++) {
-    await waitForAnthropicCapacity(redisConnection);
-    const response = await anthropic.messages.create({
-      model,
-      max_tokens: 8192,
-      system: LT_SYSTEM_PROMPT,
-      tools: LT_TOOLS,
-      messages,
-    });
+  const dispatchTool = async (block: Anthropic.ToolUseBlock): Promise<string> => {
+    if (block.name === 'read_github_file') {
+      const { file_path, branch } = block.input as { file_path: string; branch?: string };
+      const content = await readFile(file_path, branch);
+      jobLog.debug({ file_path, branch, found: content !== null }, 'ferramenta read_github_file executada');
+      return content ?? '(arquivo não encontrado no repositório)';
+    }
 
-    jobLog.debug(
-      { turn, stop_reason: response.stop_reason, usage: response.usage },
-      'resposta do Claude recebida',
-    );
+    return `Ferramenta desconhecida: ${block.name}`;
+  };
 
-    messages.push({ role: 'assistant', content: response.content });
-
-    if (response.stop_reason === 'end_turn') {
+  return runAgentLoop<string>({
+    anthropic,
+    redis: redisConnection,
+    model,
+    system: LT_SYSTEM_PROMPT,
+    tools: LT_TOOLS,
+    messages,
+    maxTurns: 10,
+    log: jobLog,
+    label: 'LT',
+    dispatchTool,
+    onEndTurn: (response) => {
       const raw = response.content
         .filter((b): b is Anthropic.TextBlock => b.type === 'text')
         .map((b) => b.text)
@@ -122,44 +127,8 @@ Lembre-se: responda APENAS com o markdown do plano, começando com "# Plano de E
       const planContent = extractMarkdownContent(raw);
       if (!planContent) throw new Error('Claude retornou plano vazio');
       return planContent;
-    }
-
-    if (response.stop_reason === 'tool_use') {
-      const toolResults: Anthropic.ToolResultBlockParam[] = [];
-
-      for (const block of response.content) {
-        if (block.type !== 'tool_use') continue;
-
-        let result: string;
-        try {
-          if (block.name === 'read_github_file') {
-            const { file_path, branch } = block.input as { file_path: string; branch?: string };
-            const content = await readFile(file_path, branch);
-            result = content ?? '(arquivo não encontrado no repositório)';
-            jobLog.debug({ file_path, branch, found: content !== null }, 'ferramenta read_github_file executada');
-          } else {
-            result = `Ferramenta desconhecida: ${block.name}`;
-          }
-        } catch (err) {
-          result = `Erro ao executar ferramenta: ${(err as Error).message}`;
-          jobLog.warn({ tool: block.name, err: (err as Error).message }, 'ferramenta retornou erro');
-        }
-
-        toolResults.push({
-          type: 'tool_result',
-          tool_use_id: block.id,
-          content: result,
-        });
-      }
-
-      messages.push({ role: 'user', content: toolResults });
-      continue;
-    }
-
-    throw new Error(`stop_reason inesperado: ${response.stop_reason}`);
-  }
-
-  throw new Error('Agente LT excedeu o limite de 10 turnos sem gerar o plano');
+    },
+  });
 }
 
 // ─── Processador do job LT ────────────────────────────────────────────────────

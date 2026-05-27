@@ -72,7 +72,7 @@ vi.mock('../../db/index', () => ({
   },
 }));
 
-vi.mock('../../queue/index', () => ({ redisConnection: {} }));
+vi.mock('../../queue/index', () => ({ redisConnection: { eval: vi.fn().mockResolvedValue(-1) } }));
 
 vi.mock('../../lib/logger', () => ({
   childLogger: () => ({
