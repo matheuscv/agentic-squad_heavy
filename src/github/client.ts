@@ -413,6 +413,49 @@ export async function waitForWorkflowCompletion(
   return null;
 }
 
+// ─── PR Files ─────────────────────────────────────────────────────────────────
+
+export type PrFileEntry = {
+  filename: string;
+  status: 'added' | 'modified' | 'removed' | 'renamed' | 'copied' | 'changed' | 'unchanged';
+  additions: number;
+  deletions: number;
+};
+
+/**
+ * Retorna os arquivos modificados no PR aberto para o branch informado.
+ * Retorna array vazio se não houver PR aberto.
+ */
+export async function getPrFiles(branch: string): Promise<PrFileEntry[]> {
+  const token = await getInstallationToken();
+  const { owner, repo } = getRepoCoords();
+
+  const prs = await githubFetch<Array<{ number: number }>>(
+    `/repos/${owner}/${repo}/pulls?head=${encodeURIComponent(`${owner}:${branch}`)}&state=open&per_page=1`,
+    token,
+  );
+
+  if (!prs.length) return [];
+
+  const prNumber = prs[0]!.number;
+  const files = await githubFetch<Array<{
+    filename: string;
+    status: string;
+    additions: number;
+    deletions: number;
+  }>>(
+    `/repos/${owner}/${repo}/pulls/${prNumber}/files?per_page=100`,
+    token,
+  );
+
+  return files.map((f) => ({
+    filename: f.filename,
+    status: f.status as PrFileEntry['status'],
+    additions: f.additions,
+    deletions: f.deletions,
+  }));
+}
+
 /**
  * Cria um Pull Request do branch de desenvolvimento para o branch padrão (ou base especificado).
  * Lança erro se o PR já existir (422) — idempotência deve ser tratada pelo caller.

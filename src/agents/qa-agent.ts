@@ -11,6 +11,7 @@ import {
   commitFiles,
   getLatestWorkflowRun,
   waitForWorkflowCompletion,
+  getPrFiles,
 } from '../github/client';
 import { devAgentQueue } from './dev-agent';
 import { childLogger } from '../lib/logger';
@@ -56,6 +57,21 @@ export const qaAgentQueue = new Queue<QaAgentJobData>('agent-qa', {
 // ─── Definição das ferramentas ────────────────────────────────────────────────
 
 const QA_TOOLS: Anthropic.Tool[] = [
+  {
+    name: 'get_pr_files',
+    description:
+      'Retorna a lista EXATA de arquivos modificados no PR do branch DEV. Use como PRIMEIRO passo para focar a revisão apenas nos arquivos alterados — não revise a codebase inteira.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        branch: {
+          type: 'string',
+          description: 'Branch do agente DEV (ex: agent/task-scrum-16)',
+        },
+      },
+      required: ['branch'],
+    },
+  },
   {
     name: 'get_workflow_run_result',
     description:
@@ -284,13 +300,21 @@ async function runQaAgent(
         `História: ${jiraKey} — "${summary}"\n` +
         `Branch DEV: ${devBranch}\n\n` +
         `Execute a revisão QA completa conforme suas instruções. ` +
-        `Comece chamando get_workflow_run_result para obter o estado atual do CI.`,
+        `Comece chamando get_pr_files e get_workflow_run_result em paralelo no mesmo turno.`,
     },
   ];
 
   jobLog.info({ model }, 'iniciando loop de tool-use QA com Claude');
 
   const dispatchTool = async (block: Anthropic.ToolUseBlock): Promise<string> => {
+    if (block.name === 'get_pr_files') {
+      const { branch } = block.input as { branch: string };
+      const files = await getPrFiles(branch);
+      jobLog.debug({ branch, fileCount: files.length }, 'ferramenta get_pr_files executada');
+      if (!files.length) return '(nenhum arquivo encontrado no PR — verifique se o PR foi criado pelo Agente DEV)';
+      return JSON.stringify(files);
+    }
+
     if (block.name === 'get_workflow_run_result') {
       const { branch } = block.input as { branch: string };
       const run = await getLatestWorkflowRun(branch);
@@ -521,7 +545,7 @@ async function runQaAgent(
     system: QA_SYSTEM_PROMPT,
     tools: QA_TOOLS,
     messages,
-    maxTurns: 50, // QA pode ter ciclos de espera de 10 min cada
+    maxTurns: 100,
     log: jobLog,
     label: 'QA',
     maxToolResultChars: 4_000,
