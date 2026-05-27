@@ -67,13 +67,13 @@ const DEV_TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'list_github_directory',
-    description: 'Lista os arquivos e subdiretórios em um caminho do repositório. Use para mapear a estrutura de pastas antes de escrever arquivos.',
+    description: 'Lista arquivos em um diretório ESPECÍFICO já nomeado no PLANO. Use APENAS para verificar se um arquivo ou subdiretório mencionado nas tasks já existe — nunca para explorar "src" inteiro ou diretórios não listados no PLANO.',
     input_schema: {
       type: 'object' as const,
       properties: {
         dir_path: {
           type: 'string',
-          description: 'Caminho do diretório a partir da raiz (ex: "src", "src/auth", "src/lib")',
+          description: 'Caminho ESPECÍFICO a partir da raiz — deve ser um diretório mencionado nas tasks do PLANO (ex: "src/utils", "src/auth") — NUNCA "src" sozinho',
         },
         branch: {
           type: 'string',
@@ -167,8 +167,8 @@ O Agente QA detectou problemas que precisam ser corrigidos neste branch.
 
 Siga estas etapas:
 1. Leia "CORRECTION_REQUEST.md" no branch "${devBranch}" para entender o que precisa ser corrigido
-2. Explore os arquivos mencionados no request com read_github_file e list_github_directory
-3. Implemente as correções nos arquivos de código e/ou testes necessários
+2. Leia com read_github_file APENAS os arquivos explicitamente listados no CORRECTION_REQUEST.md — não explore outros arquivos
+3. Implemente as correções nos arquivos listados
 4. Crie os commits com create_github_commit
 5. NÃO chame create_pull_request — o PR já existe e será reutilizado`
     : `Data atual: ${today}
@@ -180,7 +180,7 @@ Implemente completamente todos os requisitos do PLANO_DE_EXECUCAO.md desta hist�
 
 Lembre-se:
 1. Leia o PLANO_DE_EXECUCAO.md em "${jiraKey}/PLANO_DE_EXECUCAO.md" no branch "${prdBranch}"
-2. Explore o código existente antes de escrever qualquer arquivo
+2. Leia APENAS os arquivos nomeados nas tasks do PLANO antes de escrevê-los — não explore a codebase por conta própria
 3. Implemente na ordem das Ondas de Execução do PLANO
 4. Escreva testes unitários para cada módulo implementado
 5. Finalize obrigatoriamente com create_pull_request`;

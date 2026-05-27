@@ -108,13 +108,13 @@ const QA_TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'list_github_directory',
-    description: 'Lista arquivos e subdiretórios. Use para mapear testes existentes antes de escrever novos.',
+    description: 'Lista arquivos em um diretório ESPECÍFICO. Use APENAS para verificar se o arquivo de teste correspondente a um módulo do PR já existe (ex: "src/utils" para checar se currency.test.ts existe) — nunca para varrer "src" inteiro ou diretórios fora do escopo do PR.',
     input_schema: {
       type: 'object' as const,
       properties: {
         dir_path: {
           type: 'string',
-          description: 'Caminho do diretório a partir da raiz (ex: "src", "src/auth")',
+          description: 'Diretório ESPECÍFICO de um módulo retornado por get_pr_files — NUNCA "src" sozinho',
         },
         branch: {
           type: 'string',
@@ -203,7 +203,7 @@ const QA_TOOLS: Anthropic.Tool[] = [
         },
         coverage_gaps: {
           type: 'object',
-          description: 'Módulos/métricas com cobertura abaixo de 85% (ex: { "src/auth/jwt.ts": { "statements": 60 } })',
+          description: 'Módulos/métricas com cobertura abaixo de 80% (ex: { "src/auth/jwt.ts": { "statements": 60 } })',
         },
       },
       required: ['iteration', 'description'],
@@ -227,7 +227,7 @@ const QA_TOOLS: Anthropic.Tool[] = [
   {
     name: 'escalate_to_human',
     description:
-      'Registra que a cobertura não atingiu 85% após 3 iterações e notifica via Jira. Chame ANTES de finish_qa_review quando esgotadas as tentativas.',
+      'Registra que algum arquivo do PR não atingiu 80% de cobertura após 3 iterações e notifica via Jira. Chame ANTES de finish_qa_review quando esgotadas as tentativas.',
     input_schema: {
       type: 'object' as const,
       properties: {
