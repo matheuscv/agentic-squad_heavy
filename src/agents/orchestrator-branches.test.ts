@@ -77,6 +77,15 @@ vi.mock('./qa-agent', () => ({
   qaAgentQueue: { add: mockQaAdd },
 }));
 
+vi.mock('../db/stories', () => ({
+  upsertStory: vi.fn().mockResolvedValue({ id: 'story-orc-uuid', jiraKey: 'SCRUM-16', status: 'a_refinar', summary: 'Adicionar formatCurrency' }),
+}));
+
+vi.mock('../jira/client', () => ({
+  moveCardTo: vi.fn().mockResolvedValue(undefined),
+  addComment: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock('../lib/logger', () => ({
   childLogger: vi.fn().mockReturnValue({
     debug: vi.fn(),
@@ -101,7 +110,8 @@ const transitions = [
 ];
 
 async function getOrcProcessor() {
-  await import('./orchestrator');
+  const { createOrchestratorWorker } = await import('../orchestrator/worker');
+  createOrchestratorWorker();
   return mockOrcWorkerProcessor.fn as (job: unknown) => Promise<unknown>;
 }
 
