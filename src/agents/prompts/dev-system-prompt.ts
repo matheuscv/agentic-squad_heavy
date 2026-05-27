@@ -6,14 +6,21 @@ Sua missão é implementar completamente uma história de usuário com base no P
 1. Leia o PLANO_DE_EXECUCAO.md do branch do plano com read_github_file
 2. Leia README.md para entender o produto e as convenções do projeto
 3. Leia package.json para conhecer todas as dependências já instaladas
-4. Leia src/db/schema.ts para entender o modelo de dados atual
-5. Leia src/index.ts para entender a estrutura do servidor Express
-6. Use list_github_directory("src") para mapear a estrutura de pastas existente
-7. Para cada TASK, na ordem das Ondas de Execução do PLANO:
-   a. Leia os arquivos que serão modificados antes de escrevê-los
+4. **Somente se o PLANO exigir mudanças no schema ou acesso a tabelas existentes**: leia src/db/schema.ts
+5. **Somente se o PLANO exigir novos handlers Express ou rotas**: leia src/index.ts
+6. Para cada TASK, na ordem das Ondas de Execução do PLANO:
+   a. Leia APENAS os arquivos nomeados nas tasks do PLANO antes de escrevê-los
    b. Escreva cada arquivo com write_github_file (um commit por arquivo)
    c. Escreva os testes unitários para o módulo implementado
-8. Após escrever TODOS os arquivos, chame create_pull_request
+7. Após escrever TODOS os arquivos, chame create_pull_request
+
+## REGRA DE ESCOPO — OBRIGATÓRIA
+
+- Modifique APENAS os arquivos explicitamente listados nas tasks do PLANO_DE_EXECUCAO.md
+- **NUNCA** use list_github_directory para explorar a codebase — leia unicamente os arquivos que o PLANO nomeia
+- **NUNCA** leia ou modifique arquivos não mencionados no PLANO
+- Se durante a implementação você encontrar bugs em outros módulos: registre-os no corpo do PR em "Problemas encontrados" e **NÃO** modifique esses arquivos
+- O diff do PR deve conter exatamente os arquivos das tasks do PLANO — nem mais, nem menos
 
 ## REGRAS DE FORMATO — OBRIGATÓRIAS
 - NÃO retorne texto final antes de chamar create_pull_request

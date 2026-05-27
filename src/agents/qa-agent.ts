@@ -12,6 +12,7 @@ import {
   getLatestWorkflowRun,
   waitForWorkflowCompletion,
   getPrFiles,
+  type PrFileEntry,
 } from '../github/client';
 import { devAgentQueue } from './dev-agent';
 import { childLogger } from '../lib/logger';
@@ -251,7 +252,7 @@ const QA_TOOLS: Anthropic.Tool[] = [
       properties: {
         passed: {
           type: 'boolean',
-          description: 'true se cobertura ≥ 85% em todas as métricas, false se escalado para humano',
+          description: 'true se todos os arquivos do PR têm cobertura ≥ 80% em todas as métricas, false se escalado para humano',
         },
         coverage: {
           type: 'object',
@@ -291,6 +292,8 @@ async function runQaAgent(
 
   const stagedFiles = new Map<string, string>();
   let qaResult: QaAgentResult | null = null;
+  // Filenames dos arquivos fonte modificados no PR (populado pelo handler get_pr_files)
+  let prSourceFiles: string[] = [];
 
   const messages: Anthropic.MessageParam[] = [
     {
@@ -312,6 +315,10 @@ async function runQaAgent(
       const files = await getPrFiles(branch);
       jobLog.debug({ branch, fileCount: files.length }, 'ferramenta get_pr_files executada');
       if (!files.length) return '(nenhum arquivo encontrado no PR — verifique se o PR foi criado pelo Agente DEV)';
+      // Guarda filenames dos arquivos fonte (não-teste) para filtrar cobertura por arquivo do PR
+      prSourceFiles = (files as PrFileEntry[])
+        .map(f => f.filename)
+        .filter(n => !n.endsWith('.test.ts') && !n.endsWith('.spec.ts'));
       return JSON.stringify(files);
     }
 
@@ -319,9 +326,26 @@ async function runQaAgent(
       const { branch } = block.input as { branch: string };
       const run = await getLatestWorkflowRun(branch);
       const coverageRaw = await readFile('.qa-coverage.json', branch);
-      const coverageParsed = coverageRaw ? JSON.parse(coverageRaw) : null;
-      // Envia apenas o resumo total — dados por arquivo podem ter centenas de linhas
-      const coverage = coverageParsed?.total ? { total: coverageParsed.total } : coverageParsed;
+      const coverageParsed = coverageRaw ? (JSON.parse(coverageRaw) as Record<string, unknown>) : null;
+
+      let coverage: Record<string, unknown> | null = null;
+      if (coverageParsed) {
+        const { total, ...perFile } = coverageParsed;
+        coverage = { total };
+
+        // Filtra cobertura para os arquivos do PR (chaves do JSON são caminhos absolutos)
+        const targetFiles = prSourceFiles.length > 0 ? prSourceFiles : null;
+        if (targetFiles) {
+          const filesCoverage: Record<string, unknown> = {};
+          for (const prFile of targetFiles) {
+            const normalizedPrFile = prFile.replace(/\\/g, '/');
+            const absKey = Object.keys(perFile).find(k => k.replace(/\\/g, '/').endsWith(`/${normalizedPrFile}`));
+            if (absKey) filesCoverage[prFile] = perFile[absKey];
+          }
+          if (Object.keys(filesCoverage).length > 0) coverage.files = filesCoverage;
+        }
+      }
+
       jobLog.debug({ branch, runId: run?.runId, conclusion: run?.conclusion }, 'workflow run obtido');
       return JSON.stringify({ run, coverage });
     }
