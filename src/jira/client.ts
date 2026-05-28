@@ -38,6 +38,12 @@ type JiraTransitionsResult = {
   transitions: JiraTransition[];
 };
 
+// ─── Retry com backoff exponencial ────────────────────────────────────────────
+
+const JIRA_RETRYABLE = new Set([408, 429, 500, 502, 503, 504]);
+const JIRA_MAX_RETRIES = 3;
+const JIRA_BASE_DELAY_MS = 1_000;
+
 // ─── Helpers internos ─────────────────────────────────────────────────────────
 
 function getBaseHeaders(): Record<string, string> {
@@ -65,20 +71,37 @@ async function jiraFetch<T>(
   path: string,
   options: RequestInit = {},
 ): Promise<T> {
-  const res = await fetch(`${getBaseUrl()}${path}`, {
-    ...options,
-    headers: { ...getBaseHeaders(), ...(options.headers as Record<string, string> | undefined) },
-  });
+  let lastErr: Error | undefined;
 
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Jira API ${res.status} ${path}: ${body}`);
+  for (let attempt = 0; attempt <= JIRA_MAX_RETRIES; attempt++) {
+    if (attempt > 0) {
+      await new Promise((resolve) => setTimeout(resolve, JIRA_BASE_DELAY_MS * 2 ** (attempt - 1)));
+    }
+
+    let res: Response;
+    try {
+      res = await fetch(`${getBaseUrl()}${path}`, {
+        ...options,
+        headers: { ...getBaseHeaders(), ...(options.headers as Record<string, string> | undefined) },
+      });
+    } catch (err) {
+      lastErr = err as Error;
+      if (attempt < JIRA_MAX_RETRIES) continue;
+      throw lastErr;
+    }
+
+    if (res.status === 204) return undefined as T;
+    if (res.ok) return res.json() as Promise<T>;
+
+    if (!JIRA_RETRYABLE.has(res.status) || attempt === JIRA_MAX_RETRIES) {
+      const body = await res.text();
+      throw new Error(`Jira API ${res.status} ${path}: ${body}`);
+    }
+
+    lastErr = new Error(`Jira API ${res.status} ${path} (tentativa ${attempt + 1}/${JIRA_MAX_RETRIES + 1})`);
   }
 
-  // 204 No Content (transitionIssue, addComment sem corpo de retorno)
-  if (res.status === 204) return undefined as T;
-
-  return res.json() as Promise<T>;
+  throw lastErr ?? new Error('unreachable');
 }
 
 // ─── API pública ──────────────────────────────────────────────────────────────

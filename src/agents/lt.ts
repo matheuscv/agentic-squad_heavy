@@ -3,8 +3,9 @@ import { Queue, Worker, type Job } from 'bullmq';
 import { eq } from 'drizzle-orm';
 import { db, schema } from '../db/index';
 import { updateStoryStatus } from '../db/stories';
-import { redisConnection } from '../queue/index';
+import { redisConnection, agentDlqQueue } from '../queue/index';
 import { moveCardTo, addComment } from '../jira/client';
+import { sanitizeForLlm } from '../lib/sanitize';
 import { commitFile, readFile } from '../github/client';
 import { childLogger, logAgentStarted, logAgentCompleted, logAgentFailed } from '../lib/logger';
 import { runAgentLoop } from '../lib/agent-loop';
@@ -76,6 +77,7 @@ async function runLtAgent(
   jiraKey: string,
   summary: string,
   agentRunId: string,
+  signal?: AbortSignal,
 ): Promise<{ planContent: string; inputTokens: number; outputTokens: number }> {
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   const model = process.env.ANTHROPIC_MODEL ?? 'claude-opus-4-7';
@@ -103,7 +105,7 @@ Lembre-se: responda APENAS com o markdown do plano, começando com "# Plano de E
       const { file_path, branch } = block.input as { file_path: string; branch?: string };
       const content = await readFile(file_path, branch);
       jobLog.debug({ file_path, branch, found: content !== null }, 'ferramenta read_github_file executada');
-      return content ?? '(arquivo não encontrado no repositório)';
+      return content !== null ? sanitizeForLlm(content) : '(arquivo não encontrado no repositório)';
     }
 
     return `Ferramenta desconhecida: ${block.name}`;
@@ -120,6 +122,7 @@ Lembre-se: responda APENAS com o markdown do plano, começando com "# Plano de E
     log: jobLog,
     label: 'LT',
     dispatchTool,
+    signal,
     onEndTurn: (response) => {
       const raw = response.content
         .filter((b): b is Anthropic.TextBlock => b.type === 'text')
@@ -152,8 +155,10 @@ async function processLtJob(job: Job<LtAgentJobData>): Promise<unknown> {
     .where(eq(schema.agentRuns.id, agentRunId));
 
   try {
-    // 2. Gera PLANO_DE_EXECUCAO.md via Claude (tool-use loop)
-    const { planContent, inputTokens, outputTokens } = await runLtAgent(jiraKey, summary, agentRunId);
+    // 2. Gera PLANO_DE_EXECUCAO.md via Claude (tool-use loop) — timeout de 5 min configurável
+    const agentTimeoutMs = Number(process.env.LT_AGENT_TIMEOUT_MS ?? 300_000);
+    const signal = AbortSignal.timeout(agentTimeoutMs);
+    const { planContent, inputTokens, outputTokens } = await runLtAgent(jiraKey, summary, agentRunId, signal);
     const costUsd = calculateCostUsd(model, inputTokens, outputTokens);
     jobLog.info({ planLength: planContent.length, inputTokens, outputTokens, costUsd }, 'PLANO_DE_EXECUCAO.md gerado pelo Claude');
 
@@ -264,6 +269,7 @@ export function createLtAgentWorker() {
   const worker = new Worker<LtAgentJobData>('agent-lt', processLtJob, {
     connection: redisConnection,
     concurrency: 3,
+    lockDuration: 360_000, // 6 min — margem sobre o timeout de 5 min do agente
   });
 
   worker.on('completed', (job, result) => {
@@ -271,10 +277,22 @@ export function createLtAgentWorker() {
   });
 
   worker.on('failed', (job, err) => {
+    const isFinalAttempt = job != null && job.attemptsMade >= (job.opts.attempts ?? 1);
     log.error(
-      { jobId: job?.id, attempt: job?.attemptsMade, maxAttempts: job?.opts.attempts, err: err.message },
+      { jobId: job?.id, attempt: job?.attemptsMade, maxAttempts: job?.opts.attempts, err: err.message, finalAttempt: isFinalAttempt },
       'job falhou',
     );
+    if (isFinalAttempt && job) {
+      const { jiraKey, storyId, agentRunId } = job.data;
+      void agentDlqQueue.add('dead-letter', {
+        originalQueue: 'agent-lt', jobId: job.id, jobData: job.data,
+        failedAt: new Date().toISOString(), errorMessage: err.message, attemptsMade: job.attemptsMade,
+      });
+      void addComment(jiraKey,
+        `⚠️ *Agente LT* falhou após ${job.attemptsMade} tentativas e requer intervenção humana.\n\n` +
+        `Erro: ${err.message}\n\nJob ID: ${job.id ?? 'n/a'} | Run ID: ${agentRunId ?? 'n/a'} | Story: ${storyId}`,
+      ).catch(() => {});
+    }
   });
 
   worker.on('error', (err) => {

@@ -86,30 +86,53 @@ async function getInstallationToken(): Promise<string> {
 
 // ─── Helpers de API ───────────────────────────────────────────────────────────
 
+const GITHUB_RETRYABLE = new Set([429, 500, 502, 503, 504]);
+const GITHUB_MAX_RETRIES = 3;
+const GITHUB_BASE_DELAY_MS = 1_000;
+
 async function githubFetch<T>(
   path: string,
   token: string,
   options: RequestInit = {},
 ): Promise<T> {
-  const res = await fetch(`https://api.github.com${path}`, {
-    ...options,
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: 'application/vnd.github+json',
-      'X-GitHub-Api-Version': '2022-11-28',
-      'Content-Type': 'application/json',
-      ...(options.headers as Record<string, string> | undefined),
-    },
-  });
+  let lastErr: Error | undefined;
 
-  if (res.status === 204) return undefined as T;
+  for (let attempt = 0; attempt <= GITHUB_MAX_RETRIES; attempt++) {
+    if (attempt > 0) {
+      await new Promise((resolve) => setTimeout(resolve, GITHUB_BASE_DELAY_MS * 2 ** (attempt - 1)));
+    }
 
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`GitHub API ${res.status} ${path}: ${body}`);
+    let res: Response;
+    try {
+      res = await fetch(`https://api.github.com${path}`, {
+        ...options,
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/vnd.github+json',
+          'X-GitHub-Api-Version': '2022-11-28',
+          'Content-Type': 'application/json',
+          ...(options.headers as Record<string, string> | undefined),
+        },
+      });
+    } catch (err) {
+      lastErr = err as Error;
+      if (attempt < GITHUB_MAX_RETRIES) continue;
+      throw lastErr;
+    }
+
+    if (res.status === 204) return undefined as T;
+    if (res.ok) return res.json() as Promise<T>;
+
+    // 401/403 são erros de autenticação — não adianta retentar
+    if (res.status === 401 || res.status === 403 || !GITHUB_RETRYABLE.has(res.status) || attempt === GITHUB_MAX_RETRIES) {
+      const body = await res.text();
+      throw new Error(`GitHub API ${res.status} ${path}: ${body}`);
+    }
+
+    lastErr = new Error(`GitHub API ${res.status} ${path} (tentativa ${attempt + 1}/${GITHUB_MAX_RETRIES + 1})`);
   }
 
-  return res.json() as Promise<T>;
+  throw lastErr ?? new Error('unreachable');
 }
 
 function getRepoCoords() {

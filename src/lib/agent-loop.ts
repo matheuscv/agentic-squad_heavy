@@ -98,6 +98,8 @@ export interface RunAgentLoopOptions<T> {
   keepLastTurns?: number;
   /** Limite de caracteres por tool_result — rede de segurança contra contexto gigante. */
   maxToolResultChars?: number;
+  /** AbortSignal para timeout configurável por agente (PO/LT: 5min, DEV: 15min, QA: 10min). */
+  signal?: AbortSignal;
 }
 
 export interface AgentLoopResult<T> {
@@ -114,6 +116,7 @@ export async function runAgentLoop<T>(opts: RunAgentLoopOptions<T>): Promise<Age
     maxTokens = DEFAULT_MAX_TOKENS,
     keepLastTurns = DEFAULT_KEEP_LAST_TURNS,
     maxToolResultChars,
+    signal,
   } = opts;
 
   let lastInputTokens = 8_000;
@@ -124,7 +127,10 @@ export async function runAgentLoop<T>(opts: RunAgentLoopOptions<T>): Promise<Age
     await waitForAnthropicCapacity(redis, lastInputTokens);
 
     const response = await callClaudeWithRetry(
-      () => anthropic.messages.create({ model, max_tokens: maxTokens, system, tools, messages }),
+      () => anthropic.messages.create(
+        { model, max_tokens: maxTokens, system, tools, messages },
+        signal ? { signal } : undefined,
+      ),
       (attempt, waitMs) => log.warn({ turn, attempt, waitMs }, 'rate limit 429 — aguardando janela de tokens'),
     );
     lastInputTokens = response.usage.input_tokens;

@@ -1,8 +1,9 @@
 import { Router, type Request, type Response } from 'express';
 import { timingSafeEqual } from 'crypto';
 import { z } from 'zod';
-import { orchestratorQueue, type OrchestratorJobData } from '../queue/index';
+import { orchestratorQueue, redisConnection, type OrchestratorJobData } from '../queue/index';
 import { childLogger } from '../lib/logger';
+import { sanitizeForLlm } from '../lib/sanitize';
 
 const log = childLogger({ module: 'webhook.jira' });
 
@@ -39,6 +40,34 @@ const jiraWebhookSchema = z.object({
     .optional(),
 });
 
+// ─── Rate limiting ────────────────────────────────────────────────────────────
+// In-memory: 60 requisições por IP por janela de 60 segundos.
+
+const rateLimitStore = new Map<string, { count: number; windowStart: number }>();
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_MAX = 60;
+
+function checkRateLimit(ip: string): boolean {
+  const now = Date.now();
+  const entry = rateLimitStore.get(ip);
+  if (!entry || now - entry.windowStart >= RATE_LIMIT_WINDOW_MS) {
+    rateLimitStore.set(ip, { count: 1, windowStart: now });
+    return true;
+  }
+  if (entry.count >= RATE_LIMIT_MAX) return false;
+  entry.count++;
+  return true;
+}
+
+// ─── Proteção contra replay ───────────────────────────────────────────────────
+// Chave única por (jiraKey + fromStatus + toStatus) dentro de uma janela de 5 min.
+// Redis SET NX com TTL de 300s garante idempotência para retries do Jira.
+
+function replayNonceKey(issueKey: string, from: string | null, to: string | null): string {
+  const bucket = Math.floor(Date.now() / 300_000); // janela de 5 min
+  return `wh:nonce:${issueKey}:${from ?? '_'}:${to ?? '_'}:${bucket}`;
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function validateSecret(received: unknown): boolean {
@@ -58,13 +87,21 @@ function validateSecret(received: unknown): boolean {
 //   https://agentic-squad-heavy.onrender.com/webhooks/jira?secret=<JIRA_WEBHOOK_SECRET>
 
 router.post('/jira', async (req: Request, res: Response) => {
-  // 1. Valida segredo
+  // 1. Rate limiting
+  const clientIp = (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim() ?? req.ip ?? 'unknown';
+  if (!checkRateLimit(clientIp)) {
+    log.warn({ ip: clientIp }, 'rate limit excedido');
+    res.setHeader('Retry-After', '60');
+    return res.status(429).json({ error: 'rate_limit_exceeded' });
+  }
+
+  // 2. Valida segredo
   if (!validateSecret(req.query['secret'])) {
-    log.warn({ ip: req.ip }, 'requisição não autorizada — secret inválido');
+    log.warn({ ip: clientIp }, 'requisição não autorizada — secret inválido');
     return res.status(401).json({ error: 'unauthorized' });
   }
 
-  // 2. Valida estrutura do payload
+  // 3. Valida estrutura do payload
   const parsed = jiraWebhookSchema.safeParse(req.body);
   if (!parsed.success) {
     log.warn({ validationError: parsed.error.message }, 'payload inválido');
@@ -73,12 +110,12 @@ router.post('/jira', async (req: Request, res: Response) => {
 
   const { webhookEvent, issue, changelog } = parsed.data;
 
-  // 3. Ignora eventos que não sejam atualizações de issue
+  // 4. Ignora eventos que não sejam atualizações de issue
   if (webhookEvent !== 'jira:issue_updated') {
     return res.status(200).json({ ignored: true, reason: 'event_not_tracked' });
   }
 
-  // 4. Filtra apenas mudanças de status
+  // 5. Filtra apenas mudanças de status
   const statusChange = changelog?.items.find((item) => item.field === 'status');
   if (!statusChange) {
     return res.status(200).json({ ignored: true, reason: 'no_status_change' });
@@ -87,13 +124,21 @@ router.post('/jira', async (req: Request, res: Response) => {
   const fromStatus = statusChange.fromString ?? null;
   const toStatus = statusChange.toString ?? null;
 
+  // 6. Proteção contra replay — idempotência de 5 min via Redis SET NX
+  const nonceKey = replayNonceKey(issue.key, fromStatus, toStatus);
+  const wasSet = await redisConnection.set(nonceKey, '1', 'EX', 300, 'NX');
+  if (wasSet === null) {
+    log.info({ jiraKey: issue.key, from: fromStatus, to: toStatus }, 'replay detectado — evento ignorado');
+    return res.status(200).json({ ignored: true, reason: 'replay_detected' });
+  }
+
   log.info({ jiraKey: issue.key, from: fromStatus, to: toStatus }, 'transição recebida');
 
-  // 5. Enfileira job no BullMQ
+  // 7. Enfileira job no BullMQ (sanitiza o summary antes de persistir)
   const jobData: OrchestratorJobData = {
     jiraKey: issue.key,
     issueId: issue.id,
-    summary: issue.fields.summary,
+    summary: sanitizeForLlm(issue.fields.summary),
     fromStatus,
     toStatus,
     currentStatus: issue.fields.status.name,
@@ -105,6 +150,7 @@ router.post('/jira', async (req: Request, res: Response) => {
   });
 
   log.info({ jiraKey: issue.key, jobId: job.id, from: fromStatus, to: toStatus }, 'job enfileirado');
+
 
   return res.status(200).json({
     queued: true,

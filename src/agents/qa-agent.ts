@@ -3,7 +3,7 @@ import { Queue, Worker, type Job } from 'bullmq';
 import { and, eq, inArray } from 'drizzle-orm';
 import { db, schema } from '../db/index';
 import { updateStoryStatus } from '../db/stories';
-import { redisConnection } from '../queue/index';
+import { redisConnection, agentDlqQueue } from '../queue/index';
 import { moveCardTo, addComment } from '../jira/client';
 import {
   readFile,
@@ -286,6 +286,7 @@ async function runQaAgent(
   summary: string,
   agentRunId: string,
   storyId: string,
+  signal?: AbortSignal,
 ): Promise<QaAgentResult & { inputTokens: number; outputTokens: number }> {
   const devBranch = `agent/task-${jiraKey.toLowerCase()}`;
   const jobLog = log.child({ jiraKey, agentRunId, devBranch });
@@ -591,6 +592,7 @@ async function runQaAgent(
     label: 'QA',
     maxToolResultChars: 4_000,
     dispatchTool,
+    signal,
     onEndTurn: () => {
       if (!qaResult) {
         throw new Error('Agente QA encerrou sem chamar finish_qa_review');
@@ -618,7 +620,10 @@ async function processQaJob(job: Job<QaAgentJobData>): Promise<unknown> {
     .where(eq(schema.agentRuns.id, agentRunId));
 
   try {
-    const qaResult = await runQaAgent(jiraKey, summary, agentRunId, storyId);
+    // Timeout de 10 min para o loop Claude do QA (lockDuration separado cobre o ciclo DEV+QA completo)
+    const agentTimeoutMs = Number(process.env.QA_AGENT_TIMEOUT_MS ?? 600_000);
+    const signal = AbortSignal.timeout(agentTimeoutMs);
+    const qaResult = await runQaAgent(jiraKey, summary, agentRunId, storyId, signal);
 
     // Salva relatório de testes
     await db.insert(schema.artifacts).values({
@@ -725,10 +730,22 @@ export function createQaAgentWorker() {
   });
 
   worker.on('failed', (job, err) => {
+    const isFinalAttempt = job != null && job.attemptsMade >= (job.opts.attempts ?? 1);
     log.error(
-      { jobId: job?.id, attempt: job?.attemptsMade, maxAttempts: job?.opts.attempts, err: err.message },
+      { jobId: job?.id, attempt: job?.attemptsMade, maxAttempts: job?.opts.attempts, err: err.message, finalAttempt: isFinalAttempt },
       'job falhou',
     );
+    if (isFinalAttempt && job) {
+      const { jiraKey, storyId, agentRunId } = job.data;
+      void agentDlqQueue.add('dead-letter', {
+        originalQueue: 'agent-qa', jobId: job.id, jobData: job.data,
+        failedAt: new Date().toISOString(), errorMessage: err.message, attemptsMade: job.attemptsMade,
+      });
+      void addComment(jiraKey,
+        `⚠️ *Agente QA* falhou após ${job.attemptsMade} tentativas e requer intervenção humana.\n\n` +
+        `Erro: ${err.message}\n\nJob ID: ${job.id ?? 'n/a'} | Run ID: ${agentRunId ?? 'n/a'} | Story: ${storyId}`,
+      ).catch(() => {});
+    }
   });
 
   worker.on('error', (err) => {

@@ -5,6 +5,7 @@
 *.pem
 *.key
 secrets/
+docs/Configs_Projeto_agentic_squad_heavy.txt
 
 # Node
 node_modules/

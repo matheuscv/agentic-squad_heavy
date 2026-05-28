@@ -29,6 +29,23 @@ export const orchestratorQueue = new Queue('orchestrator', {
   },
 });
 
+export const agentDlqQueue = new Queue('agent-dlq', {
+  connection: redisConnection,
+  defaultJobOptions: {
+    removeOnComplete: { count: 200 },
+    removeOnFail: { count: 200 },
+  },
+});
+
+export type DlqJobData = {
+  originalQueue: string;
+  jobId: string | undefined;
+  jobData: unknown;
+  failedAt: string;
+  errorMessage: string;
+  attemptsMade: number;
+};
+
 export type OrchestratorJobData = {
   jiraKey: string;
   issueId: string;

@@ -3,8 +3,9 @@ import { Queue, Worker, type Job } from 'bullmq';
 import { eq } from 'drizzle-orm';
 import { db, schema } from '../db/index';
 import { updateStoryStatus, updateStoryDescription } from '../db/stories';
-import { redisConnection } from '../queue/index';
+import { redisConnection, agentDlqQueue } from '../queue/index';
 import { getIssue, moveCardTo, addComment } from '../jira/client';
+import { sanitizeForLlm } from '../lib/sanitize';
 import { commitFile, createBranch, readFile } from '../github/client';
 import { childLogger, logAgentStarted, logAgentCompleted, logAgentFailed } from '../lib/logger';
 import { runAgentLoop } from '../lib/agent-loop';
@@ -98,6 +99,7 @@ async function runPoAgent(
   jiraKey: string,
   summary: string,
   agentRunId: string,
+  signal?: AbortSignal,
 ): Promise<{ prdContent: string; inputTokens: number; outputTokens: number }> {
   const jobLog = log.child({ jiraKey, agentRunId });
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -125,8 +127,8 @@ Lembre-se: responda APENAS com o markdown do PRD, começando com "# PRD —".`,
       jobLog.debug({ issue_key }, 'ferramenta get_jira_issue executada');
       return JSON.stringify({
         key: issue.key,
-        summary: issue.fields.summary,
-        description: description || '(sem descrição)',
+        summary: sanitizeForLlm(issue.fields.summary),
+        description: sanitizeForLlm(description || '(sem descrição)'),
         status: issue.fields.status.name,
       });
     }
@@ -135,7 +137,7 @@ Lembre-se: responda APENAS com o markdown do PRD, começando com "# PRD —".`,
       const { file_path } = block.input as { file_path: string };
       const content = await readFile(file_path);
       jobLog.debug({ file_path, found: content !== null }, 'ferramenta read_github_file executada');
-      return content ?? '(arquivo não encontrado no repositório)';
+      return content !== null ? sanitizeForLlm(content) : '(arquivo não encontrado no repositório)';
     }
 
     return `Ferramenta desconhecida: ${block.name}`;
@@ -152,6 +154,7 @@ Lembre-se: responda APENAS com o markdown do PRD, começando com "# PRD —".`,
     log: jobLog,
     label: 'PO',
     dispatchTool,
+    signal,
     onEndTurn: (response) => {
       const raw = response.content
         .filter((b): b is Anthropic.TextBlock => b.type === 'text')
@@ -196,8 +199,10 @@ async function processPoJob(job: Job<PoAgentJobData>): Promise<unknown> {
       jobLog.warn({ err: (err as Error).message }, 'falha ao pré-carregar descrição — Claude buscará via ferramenta');
     }
 
-    // 3. Gera PRD via Claude (tool-use loop)
-    const { prdContent, inputTokens, outputTokens } = await runPoAgent(jiraKey, summary, agentRunId);
+    // 3. Gera PRD via Claude (tool-use loop) — timeout de 5 min configurável
+    const agentTimeoutMs = Number(process.env.PO_AGENT_TIMEOUT_MS ?? 300_000);
+    const signal = AbortSignal.timeout(agentTimeoutMs);
+    const { prdContent, inputTokens, outputTokens } = await runPoAgent(jiraKey, summary, agentRunId, signal);
     const costUsd = calculateCostUsd(model, inputTokens, outputTokens);
     jobLog.info({ prdLength: prdContent.length, inputTokens, outputTokens, costUsd }, 'PRD.md gerado pelo Claude');
 
@@ -313,6 +318,7 @@ export function createPoAgentWorker() {
   const worker = new Worker<PoAgentJobData>('agent-po', processPoJob, {
     connection: redisConnection,
     concurrency: 3,
+    lockDuration: 360_000, // 6 min — margem sobre o timeout de 5 min do agente
   });
 
   worker.on('completed', (job, result) => {
@@ -320,10 +326,22 @@ export function createPoAgentWorker() {
   });
 
   worker.on('failed', (job, err) => {
+    const isFinalAttempt = job != null && job.attemptsMade >= (job.opts.attempts ?? 1);
     log.error(
-      { jobId: job?.id, attempt: job?.attemptsMade, maxAttempts: job?.opts.attempts, err: err.message },
+      { jobId: job?.id, attempt: job?.attemptsMade, maxAttempts: job?.opts.attempts, err: err.message, finalAttempt: isFinalAttempt },
       'job falhou',
     );
+    if (isFinalAttempt && job) {
+      const { jiraKey, storyId, agentRunId } = job.data;
+      void agentDlqQueue.add('dead-letter', {
+        originalQueue: 'agent-po', jobId: job.id, jobData: job.data,
+        failedAt: new Date().toISOString(), errorMessage: err.message, attemptsMade: job.attemptsMade,
+      });
+      void addComment(jiraKey,
+        `⚠️ *Agente PO* falhou após ${job.attemptsMade} tentativas e requer intervenção humana.\n\n` +
+        `Erro: ${err.message}\n\nJob ID: ${job.id ?? 'n/a'} | Run ID: ${agentRunId ?? 'n/a'} | Story: ${storyId}`,
+      ).catch(() => {});
+    }
   });
 
   worker.on('error', (err) => {

@@ -3,8 +3,9 @@ import { Queue, Worker, type Job } from 'bullmq';
 import { eq } from 'drizzle-orm';
 import { db, schema } from '../db/index';
 import { updateStoryStatus } from '../db/stories';
-import { redisConnection } from '../queue/index';
+import { redisConnection, agentDlqQueue } from '../queue/index';
 import { moveCardTo, addComment } from '../jira/client';
+import { sanitizeForLlm } from '../lib/sanitize';
 import { createBranch, readFile, listDirectory, commitFiles, createPullRequest, type PullRequestResult } from '../github/client';
 import { childLogger, logAgentStarted, logAgentCompleted, logAgentFailed } from '../lib/logger';
 import { runAgentLoop } from '../lib/agent-loop';
@@ -159,6 +160,7 @@ async function runDevAgent(
   devBranch: string,
   correctionMode: boolean = false,
   correctionIteration: number = 1,
+  signal?: AbortSignal,
 ): Promise<DevAgentResult & { inputTokens: number; outputTokens: number }> {
   const jobLog = log.child({ jiraKey, agentRunId, devBranch, correctionMode });
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -212,7 +214,7 @@ Lembre-se:
       const { file_path, branch } = block.input as { file_path: string; branch?: string };
       const content = await readFile(file_path, branch);
       jobLog.debug({ file_path, branch, found: content !== null }, 'read_github_file executado');
-      return content ?? '(arquivo não encontrado)';
+      return content !== null ? sanitizeForLlm(content) : '(arquivo não encontrado)';
     }
 
     if (block.name === 'list_github_directory') {
@@ -271,6 +273,7 @@ Lembre-se:
     log: jobLog,
     label: 'DEV',
     dispatchTool,
+    signal,
     onEndTurn: () => {
       if (!correctionMode && !prResult) {
         throw new Error('Agente DEV encerrou sem criar o Pull Request — verifique o loop de tools');
@@ -314,10 +317,13 @@ async function processDevJob(job: Job<DevAgentJobData>): Promise<unknown> {
     await createBranch(devBranch); // idempotente: ignora 422 se branch já existe
     jobLog.debug({ devBranch }, 'branch verificado/criado');
 
-    // 3. Executa o agente DEV
+    // 3. Executa o agente DEV — timeout de 15 min configurável
+    const agentTimeoutMs = Number(process.env.DEV_AGENT_TIMEOUT_MS ?? 900_000);
+    const signal = AbortSignal.timeout(agentTimeoutMs);
     const devResult = await runDevAgent(
       jiraKey, summary, agentRunId, devBranch,
       correctionMode ?? false, correctionIteration ?? 1,
+      signal,
     );
 
     jobLog.info(
@@ -431,7 +437,7 @@ export function createDevAgentWorker() {
   const worker = new Worker<DevAgentJobData>('agent-dev', processDevJob, {
     connection: redisConnection,
     concurrency: 5,          // até 5 histórias implementadas em paralelo
-    lockDuration: 600_000,   // 10 min — renovado automaticamente a cada 5 min pelo BullMQ
+    lockDuration: 960_000,   // 16 min — margem sobre o timeout de 15 min do agente
   });
 
   worker.on('completed', (job, result) => {
@@ -439,10 +445,22 @@ export function createDevAgentWorker() {
   });
 
   worker.on('failed', (job, err) => {
+    const isFinalAttempt = job != null && job.attemptsMade >= (job.opts.attempts ?? 1);
     log.error(
-      { jobId: job?.id, attempt: job?.attemptsMade, maxAttempts: job?.opts.attempts, err: err.message },
+      { jobId: job?.id, attempt: job?.attemptsMade, maxAttempts: job?.opts.attempts, err: err.message, finalAttempt: isFinalAttempt },
       'job falhou',
     );
+    if (isFinalAttempt && job) {
+      const { jiraKey, storyId, agentRunId } = job.data;
+      void agentDlqQueue.add('dead-letter', {
+        originalQueue: 'agent-dev', jobId: job.id, jobData: job.data,
+        failedAt: new Date().toISOString(), errorMessage: err.message, attemptsMade: job.attemptsMade,
+      });
+      void addComment(jiraKey,
+        `⚠️ *Agente DEV* falhou após ${job.attemptsMade} tentativas e requer intervenção humana.\n\n` +
+        `Erro: ${err.message}\n\nJob ID: ${job.id ?? 'n/a'} | Run ID: ${agentRunId ?? 'n/a'} | Story: ${storyId}`,
+      ).catch(() => {});
+    }
   });
 
   worker.on('error', (err) => {
