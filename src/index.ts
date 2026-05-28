@@ -20,8 +20,9 @@ import { createQaAgentWorker } from './agents/qa-agent';
 import { db, schema } from './db/index';
 import { logger } from './lib/logger';
 
+// ─── Configuração do app Express (sem side-effects de I/O) ────────────────────
+
 const app = express();
-const port = Number(process.env.PORT ?? 3000);
 
 app.use(express.json());
 
@@ -30,58 +31,10 @@ app.use(express.json());
 app.use('/ping', pingRouter); // liveness probe — sem dependências externas
 app.use('/webhooks', jiraWebhookRouter);
 
-// ─── Conexões ─────────────────────────────────────────────────────────────────
-
-const dbPool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
-  max: 2,
-  connectionTimeoutMillis: 8_000,
-});
-
-const rawRedisUrl = process.env.REDIS_URL ?? 'redis://localhost:6379';
-const redisUrl = rawRedisUrl.includes('upstash.io') && rawRedisUrl.startsWith('redis://')
-  ? rawRedisUrl.replace('redis://', 'rediss://')
-  : rawRedisUrl;
-
-const redis = new IORedis(redisUrl, {
-  maxRetriesPerRequest: 1,
-  connectTimeout: 8_000,
-  lazyConnect: true,
-});
-
-redis.on('error', (err: Error) => {
-  logger.error({ err: err.message }, 'erro de conexão Redis');
-});
-
 app.get('/health', async (_req: Request, res: Response) => {
-  const checks: Record<string, 'ok' | 'error'> = {};
-
-  let dbError: string | undefined;
-  try {
-    await dbPool.query('SELECT 1');
-    checks.database = 'ok';
-  } catch (err) {
-    dbError = (err as Error).message;
-    logger.error({ err: dbError }, 'health check: falha no banco');
-    checks.database = 'error';
-  }
-
-  try {
-    await redis.ping();
-    checks.redis = 'ok';
-  } catch {
-    checks.redis = 'error';
-  }
-
-  const healthy = Object.values(checks).every((v) => v === 'ok');
-
-  res.status(healthy ? 200 : 503).json({
-    status: healthy ? 'ok' : 'degraded',
-    timestamp: new Date().toISOString(),
-    checks,
-    ...(dbError && { dbError }),
-  });
+  // dbPool e redis são injetados via closures em bootstrap(); fora do bootstrap
+  // esse handler nunca é alcançado em produção, mas retornamos 503 por segurança
+  res.status(503).json({ status: 'degraded', message: 'servidor não inicializado' });
 });
 
 app.get('/metrics', async (_req: Request, res: Response) => {
@@ -195,40 +148,118 @@ app.get('/metrics/cost', async (_req: Request, res: Response) => {
   }
 });
 
-// ─── Inicialização ────────────────────────────────────────────────────────────
+// ─── bootstrap — toda I/O real acontece aqui, nunca no nível do módulo ────────
 
-const orchestratorWorker = createOrchestratorWorker();
-const poAgentWorker = createPoAgentWorker();
-const ltAgentWorker = createLtAgentWorker();
-const devAgentWorker = createDevAgentWorker();
-const qaAgentWorker = createQaAgentWorker();
-const reconcilerInterval = createReconciler();
+export async function bootstrap(): Promise<void> {
+  const port = Number(process.env.PORT ?? 3000);
 
-const server = app.listen(port, () => {
-  logger.info({ port, env: process.env.NODE_ENV ?? 'development' }, 'servidor iniciado');
-});
+  // ── Conexões externas ──────────────────────────────────────────────────────
 
-// ─── Graceful shutdown ────────────────────────────────────────────────────────
-
-const shutdown = async (signal: string) => {
-  logger.info({ signal }, 'sinal recebido — encerrando');
-  server.close(async () => {
-    clearInterval(reconcilerInterval);
-    await Promise.allSettled([
-      dbPool.end(),
-      redis.quit(),
-      orchestratorWorker.close(),
-      poAgentWorker.close(),
-      ltAgentWorker.close(),
-      devAgentWorker.close(),
-      qaAgentWorker.close(),
-    ]);
-    logger.info('servidor encerrado com sucesso');
-    process.exit(0);
+  const dbPool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false },
+    max: 2,
+    connectionTimeoutMillis: 8_000,
   });
-};
 
-process.on('SIGTERM', () => void shutdown('SIGTERM'));
-process.on('SIGINT', () => void shutdown('SIGINT'));
+  const rawRedisUrl = process.env.REDIS_URL ?? 'redis://localhost:6379';
+  const redisUrl =
+    rawRedisUrl.includes('upstash.io') && rawRedisUrl.startsWith('redis://')
+      ? rawRedisUrl.replace('redis://', 'rediss://')
+      : rawRedisUrl;
+
+  const redis = new IORedis(redisUrl, {
+    maxRetriesPerRequest: 1,
+    connectTimeout: 8_000,
+    lazyConnect: true,
+  });
+
+  redis.on('error', (err: Error) => {
+    logger.error({ err: err.message }, 'erro de conexão Redis');
+  });
+
+  // Substitui o handler de /health com acesso real ao pool/redis
+  app.get('/health', async (_req: Request, res: Response) => {
+    const checks: Record<string, 'ok' | 'error'> = {};
+
+    let dbError: string | undefined;
+    try {
+      await dbPool.query('SELECT 1');
+      checks.database = 'ok';
+    } catch (err) {
+      dbError = (err as Error).message;
+      logger.error({ err: dbError }, 'health check: falha no banco');
+      checks.database = 'error';
+    }
+
+    try {
+      await redis.ping();
+      checks.redis = 'ok';
+    } catch {
+      checks.redis = 'error';
+    }
+
+    const healthy = Object.values(checks).every((v) => v === 'ok');
+
+    res.status(healthy ? 200 : 503).json({
+      status: healthy ? 'ok' : 'degraded',
+      timestamp: new Date().toISOString(),
+      checks,
+      ...(dbError && { dbError }),
+    });
+  });
+
+  // ── Workers BullMQ ─────────────────────────────────────────────────────────
+
+  const orchestratorWorker = createOrchestratorWorker();
+  const poAgentWorker      = createPoAgentWorker();
+  const ltAgentWorker      = createLtAgentWorker();
+  const devAgentWorker     = createDevAgentWorker();
+  const qaAgentWorker      = createQaAgentWorker();
+  const reconcilerInterval = createReconciler();
+
+  // ── Servidor HTTP ──────────────────────────────────────────────────────────
+
+  const server = app.listen(port, () => {
+    logger.info({ port, env: process.env.NODE_ENV ?? 'development' }, 'servidor iniciado');
+  });
+
+  // ── Graceful shutdown ──────────────────────────────────────────────────────
+
+  const shutdown = async (signal: string): Promise<void> => {
+    logger.info({ signal }, 'sinal recebido — encerrando');
+    server.close(async () => {
+      clearInterval(reconcilerInterval);
+      await Promise.allSettled([
+        dbPool.end(),
+        redis.quit(),
+        orchestratorWorker.close(),
+        poAgentWorker.close(),
+        ltAgentWorker.close(),
+        devAgentWorker.close(),
+        qaAgentWorker.close(),
+      ]);
+      logger.info('servidor encerrado com sucesso');
+      process.exit(0);
+    });
+  };
+
+  process.on('SIGTERM', () => void shutdown('SIGTERM'));
+  process.on('SIGINT',  () => void shutdown('SIGINT'));
+}
+
+// ─── Entrypoint — só executa quando o arquivo é o ponto de entrada ────────────
+
+// Em ESM com tsx/ts-node o módulo principal tem import.meta.url === process.argv[1]
+// Usamos também a verificação de extensão para compatibilidade com ambos os modos.
+const isMain =
+  typeof process.argv[1] !== 'undefined' &&
+  (process.argv[1].endsWith('index.ts') ||
+    process.argv[1].endsWith('index.js') ||
+    process.argv[1].endsWith('src/index'));
+
+if (isMain) {
+  void bootstrap();
+}
 
 export { app };

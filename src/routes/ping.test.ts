@@ -3,10 +3,10 @@ import { type Request, type Response } from 'express';
 
 // ─── Mock do módulo logger ANTES de qualquer import que o use ─────────────────
 const mockDebug = vi.fn();
-const mockChild = vi.fn(() => ({ debug: mockDebug }));
+const mockChildLogger = vi.fn(() => ({ debug: mockDebug }));
 
 vi.mock('../lib/logger', () => ({
-  logger: { child: mockChild },
+  childLogger: mockChildLogger,
 }));
 
 // ─── Import do router após os mocks ───────────────────────────────────────────
@@ -41,8 +41,14 @@ describe('src/routes/ping.ts', () => {
       const res = makeMockRes();
 
       // Extrai o handler registrado em GET '/'
-      const layer = (pingRouter.stack as Array<{ route?: { methods: Record<string, boolean>; stack: Array<{ handle: (req: Request, res: Response) => void }> } }>)
-        .find((l) => l.route?.methods?.get)?.route?.stack[0]?.handle;
+      const layer = (
+        pingRouter.stack as Array<{
+          route?: {
+            methods: Record<string, boolean>;
+            stack: Array<{ handle: (req: Request, res: Response) => void }>;
+          };
+        }>
+      ).find((l) => l.route?.methods?.get)?.route?.stack[0]?.handle;
 
       expect(layer).toBeDefined();
       layer!(req, res);
@@ -55,8 +61,14 @@ describe('src/routes/ping.ts', () => {
       const req = makeMockReq();
       const res = makeMockRes();
 
-      const layer = (pingRouter.stack as Array<{ route?: { methods: Record<string, boolean>; stack: Array<{ handle: (req: Request, res: Response) => void }> } }>)
-        .find((l) => l.route?.methods?.get)?.route?.stack[0]?.handle;
+      const layer = (
+        pingRouter.stack as Array<{
+          route?: {
+            methods: Record<string, boolean>;
+            stack: Array<{ handle: (req: Request, res: Response) => void }>;
+          };
+        }>
+      ).find((l) => l.route?.methods?.get)?.route?.stack[0]?.handle;
 
       layer!(req, res);
 
@@ -67,8 +79,8 @@ describe('src/routes/ping.ts', () => {
     });
 
     it('inicializa o child logger com module: "ping"', () => {
-      // mockChild é chamado no carregamento do módulo
-      expect(mockChild).toHaveBeenCalledWith({ module: 'ping' });
+      // mockChildLogger é chamado no carregamento do módulo
+      expect(mockChildLogger).toHaveBeenCalledWith({ module: 'ping' });
     });
   });
 });
