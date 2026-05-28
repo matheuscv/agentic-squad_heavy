@@ -1,0 +1,1041 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Validação — Fase 5 | Squad Agêntica</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0f1117;
+      color: #e2e8f0;
+      line-height: 1.65;
+      padding: 2rem;
+    }
+
+    .container { max-width: 920px; margin: 0 auto; }
+
+    /* ── Header ─────────────────────────────────────────────────────────── */
+    header {
+      border-bottom: 2px solid #2d3748;
+      padding-bottom: 1.5rem;
+      margin-bottom: 2rem;
+    }
+    header h1 { font-size: 1.85rem; color: #63b3ed; letter-spacing: -0.5px; }
+    header p  { color: #718096; margin-top: 0.4rem; font-size: 0.95rem; }
+    .badges   { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.75rem; }
+    .badge {
+      display: inline-block;
+      padding: 0.2rem 0.65rem;
+      border-radius: 9999px;
+      font-size: 0.78rem;
+      font-weight: 600;
+    }
+    .badge-phase  { background:#1a365d; color:#90cdf4; border:1px solid #2b6cb0; }
+    .badge-phase5 { background:#1a2a1a; color:#9ae6b4; border:1px solid #276749; }
+    .badge-ok     { background:#1a472a; color:#68d391; border:1px solid #2f855a; }
+    .badge-tests  { background:#2d1a5e; color:#b794f4; border:1px solid #553c9a; }
+    .badge-npm    { background:#2a1a0a; color:#f6ad55; border:1px solid #c05621; }
+
+    /* ── Info / Warning boxes ───────────────────────────────────────────── */
+    .box {
+      border-radius: 6px;
+      padding: 1rem 1.25rem;
+      margin-bottom: 1.5rem;
+    }
+    .box-info    { background:#0d2137; border:1px solid #2b6cb0; border-left:4px solid #63b3ed; }
+    .box-warn    { background:#2d1a00; border:1px solid #c05621; border-left:4px solid #ed8936; }
+    .box-success { background:#0d2718; border:1px solid #2f855a; border-left:4px solid #68d391; }
+    .box-danger  { background:#1a0a0a; border:1px solid #742a2a; border-left:4px solid #fc8181; }
+    .box strong  { display:block; margin-bottom:0.4rem; font-size:0.95rem; }
+    .box-info    strong { color:#90cdf4; }
+    .box-warn    strong { color:#ed8936; }
+    .box-success strong { color:#68d391; }
+    .box-danger  strong { color:#fc8181; }
+    .box p, .box li { color:#cbd5e0; font-size:0.9rem; }
+    .box ul { padding-left:1.2rem; margin-top:0.4rem; }
+    .box li { margin-top:0.3rem; }
+
+    /* ── Section title ──────────────────────────────────────────────────── */
+    .section-title {
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: #4a5568;
+      margin: 2.5rem 0 0.85rem;
+    }
+
+    /* ── Phase header ───────────────────────────────────────────────────── */
+    .phase-header {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      background: #171923;
+      border: 1px solid #2d3748;
+      border-radius: 10px;
+      padding: 1rem 1.4rem;
+      margin-bottom: 1rem;
+    }
+    .phase-icon {
+      width: 3rem;
+      height: 3rem;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.3rem;
+      flex-shrink: 0;
+    }
+    .phase-icon-a { background:#1a2e1a; }
+    .phase-icon-b { background:#0d2137; }
+    .phase-icon-c { background:#2d1a5e; }
+    .phase-icon-d { background:#2a1a0a; }
+    .phase-icon-e { background:#1a2a1a; }
+    .phase-icon-f { background:#2d1a1a; }
+    .phase-header h2  { font-size: 1.15rem; color: #e2e8f0; }
+    .phase-header p   { font-size: 0.88rem; color: #718096; margin-top: 0.2rem; }
+
+    /* ── Steps ──────────────────────────────────────────────────────────── */
+    .step {
+      background: #1a202c;
+      border: 1px solid #2d3748;
+      border-radius: 8px;
+      padding: 1.25rem 1.5rem;
+      margin-bottom: 1rem;
+    }
+    .step-header {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 0.85rem;
+    }
+    .step-num {
+      background: #2b6cb0;
+      color: #ebf8ff;
+      width: 2rem;
+      height: 2rem;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 0.9rem;
+      flex-shrink: 0;
+    }
+    .step-num-gate   { background:#744210; color:#fefcbf; }
+    .step-num-auto   { background:#276749; color:#c6f6d5; }
+    .step-num-probe  { background:#63171b; color:#fed7d7; }
+    .step-num-cli    { background:#553c9a; color:#e9d8fd; }
+    .step-num-check  { background:#1a472a; color:#c6f6d5; }
+    .step h3 { font-size: 1rem; color: #90cdf4; }
+    .step h3.gate-title  { color: #f6ad55; }
+    .step h3.auto-title  { color: #68d391; }
+    .step h3.probe-title { color: #fc8181; }
+    .step h3.cli-title   { color: #b794f4; }
+    .step h3.check-title { color: #9ae6b4; }
+    .step p, .step li { color: #cbd5e0; font-size: 0.91rem; }
+    .step ol, .step ul { padding-left: 1.3rem; margin-top: 0.5rem; }
+    .step li { margin-top: 0.4rem; }
+
+    /* ── Flow diagram ───────────────────────────────────────────────────── */
+    .flow {
+      background: #171923;
+      border: 1px solid #2d3748;
+      border-radius: 6px;
+      padding: 1rem 1.4rem;
+      font-family: 'Fira Code', 'Cascadia Code', monospace;
+      font-size: 0.85rem;
+      color: #a0aec0;
+      margin: 0.9rem 0;
+      line-height: 2.1;
+      overflow-x: auto;
+    }
+    .flow .auto    { color: #63b3ed; }
+    .flow .human   { color: #f6ad55; }
+    .flow .gate    { color: #f6ad55; font-weight: 600; }
+    .flow .agent   { color: #68d391; }
+    .flow .stop    { color: #fc8181; font-weight: 600; }
+    .flow .probe   { color: #fc8181; }
+    .flow .cli     { color: #b794f4; }
+    .flow .ok      { color: #9ae6b4; }
+    .flow .dim     { color: #4a5568; font-size: 0.82rem; }
+
+    /* ── Tables ─────────────────────────────────────────────────────────── */
+    table { width:100%; border-collapse:collapse; font-size:0.89rem; margin-top:0.75rem; }
+    th {
+      background: #2d3748;
+      color: #a0aec0;
+      text-align: left;
+      padding: 0.6rem 0.85rem;
+      font-weight: 600;
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    td {
+      padding: 0.65rem 0.85rem;
+      border-bottom: 1px solid #2d3748;
+      color: #cbd5e0;
+      vertical-align: top;
+    }
+    tr:last-child td { border-bottom: none; }
+    .ok   { color: #68d391; font-weight: 600; }
+    .warn { color: #f6ad55; }
+    .err  { color: #fc8181; }
+
+    /* ── Checklists ──────────────────────────────────────────────────────── */
+    .checklist { list-style: none; padding: 0; margin-top: 0.75rem; }
+    .checklist li {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.65rem;
+      padding: 0.5rem 0;
+      border-bottom: 1px solid #2d3748;
+      font-size: 0.9rem;
+      color: #cbd5e0;
+    }
+    .checklist li:last-child { border-bottom: none; }
+    .checklist li::before {
+      content: '☐';
+      color: #4a5568;
+      font-size: 1.1rem;
+      line-height: 1.2;
+      flex-shrink: 0;
+    }
+
+    /* ── Code ────────────────────────────────────────────────────────────── */
+    code {
+      background: #2d3748;
+      color: #f6e05e;
+      padding: 0.1em 0.4em;
+      border-radius: 3px;
+      font-family: 'Fira Code', 'Cascadia Code', monospace;
+      font-size: 0.85em;
+    }
+    pre {
+      background: #171923;
+      border: 1px solid #2d3748;
+      border-radius: 6px;
+      padding: 0.85rem 1.1rem;
+      overflow-x: auto;
+      font-family: 'Fira Code', 'Cascadia Code', monospace;
+      font-size: 0.84rem;
+      color: #e2e8f0;
+      margin: 0.75rem 0;
+      line-height: 1.7;
+    }
+    pre .c { color: #4a5568; }
+    pre .k { color: #63b3ed; }
+    pre .s { color: #68d391; }
+    pre .v { color: #f6e05e; }
+    pre .r { color: #fc8181; }
+    pre .p { color: #b794f4; }
+
+    /* ── Label pairs ─────────────────────────────────────────────────────── */
+    .kv { display:flex; gap:0.5rem; align-items:baseline; margin-top:0.45rem; font-size:0.89rem; }
+    .kv .k { color:#718096; min-width:160px; flex-shrink:0; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.04em; }
+    .kv .v { color:#e2e8f0; }
+
+    /* ── DoD grid ────────────────────────────────────────────────────────── */
+    .dod-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.75rem;
+      margin-top: 0.85rem;
+    }
+    .dod-item {
+      background: #171923;
+      border: 1px solid #2d3748;
+      border-radius: 8px;
+      padding: 0.85rem 1rem;
+    }
+    .dod-item .dod-label { font-size: 0.78rem; color: #718096; text-transform: uppercase; letter-spacing: 0.06em; }
+    .dod-item .dod-value { font-size: 0.92rem; color: #e2e8f0; margin-top: 0.3rem; }
+    .dod-item .dod-check { color: #68d391; font-weight: 700; margin-right: 0.35rem; }
+
+    /* ── Divider ─────────────────────────────────────────────────────────── */
+    .divider { border:none; border-top:1px solid #2d3748; margin:2.5rem 0; }
+
+    /* ── Footer ──────────────────────────────────────────────────────────── */
+    footer {
+      margin-top: 3rem;
+      padding-top: 1.2rem;
+      border-top: 1px solid #2d3748;
+      color: #4a5568;
+      font-size: 0.8rem;
+      text-align: center;
+    }
+
+    @media (max-width: 640px) {
+      .dod-grid { grid-template-columns: 1fr; }
+      body { padding: 1rem; }
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       HEADER
+  ══════════════════════════════════════════════════════════════════════ -->
+  <header>
+    <h1>Validação — Fase 5 | Squad Agêntica</h1>
+    <p>Roteiro completo de testes: onboarding via CLI, detecção de stack, isolamento multi-projeto, versionamento e publicação npm</p>
+    <div class="badges">
+      <span class="badge badge-phase5">Fase 5 — Onboarding &amp; Configuração</span>
+      <span class="badge badge-ok">244 testes passando</span>
+      <span class="badge badge-tests">TypeScript ✓ &nbsp; lint ✓ &nbsp; build ✓</span>
+      <span class="badge badge-npm">npm publish ready</span>
+    </div>
+  </header>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       O QUE VOCÊ VAI TESTAR
+  ══════════════════════════════════════════════════════════════════════ -->
+  <p class="section-title">O que você vai testar nesta fase</p>
+
+  <div class="box box-info">
+    <strong>Objetivo da Fase 5</strong>
+    <p>Validar os seis entregáveis de operacionalização da squad: o CLI de onboarding, a detecção
+    automática de stack, o isolamento entre múltiplos projetos, o sistema de versionamento, as
+    migrações controladas e a publicação no npm com documentação completa.</p>
+    <ul>
+      <li><strong>T1 — Testes automatizados:</strong> suite completa (244 testes) e verificação de tipos TypeScript</li>
+      <li><strong>T2 — squad.config.ts:</strong> validação do schema Zod com todas as seções obrigatórias</li>
+      <li><strong>T3 — CLI de onboarding:</strong> <code>agentic-squad init</code>, <code>changelog</code> e <code>migrate</code></li>
+      <li><strong>T4 — Detecção de stack:</strong> 7 linguagens detectadas automaticamente a partir dos manifests</li>
+      <li><strong>T5 — Isolamento multi-projeto:</strong> dois projetos na mesma instância sem vazamento de estado</li>
+      <li><strong>T6 — Versionamento:</strong> changelog Conventional Commits + migrações Drizzle controladas</li>
+      <li><strong>T7 — Publicação npm:</strong> <code>npm pack --dry-run</code>, README, RUNBOOK e COST_GUIDE</li>
+    </ul>
+  </div>
+
+  <div class="box box-warn">
+    <strong>⚠️ Pré-requisitos</strong>
+    <ul>
+      <li>Node.js ≥ 20 instalado localmente (<code>node --version</code>)</li>
+      <li>Repositório clonado e dependências instaladas: <code>npm install</code></li>
+      <li>Arquivo <code>.env</code> preenchido com credenciais válidas (para testes que tocam APIs reais)</li>
+      <li>Para o CLI de onboarding: acesso real ao Jira Cloud e GitHub App configurado</li>
+    </ul>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       DoD RESUMO
+  ══════════════════════════════════════════════════════════════════════ -->
+  <p class="section-title">Definition of Done — verificação rápida</p>
+
+  <div class="dod-grid">
+    <div class="dod-item">
+      <div class="dod-label">DoD 1</div>
+      <div class="dod-value"><span class="dod-check">✓</span>Segundo projeto via configuração, motor inalterado</div>
+    </div>
+    <div class="dod-item">
+      <div class="dod-label">DoD 2</div>
+      <div class="dod-value"><span class="dod-check">✓</span>Onboarding completo em &lt; 10 minutos</div>
+    </div>
+    <div class="dod-item">
+      <div class="dod-label">DoD 3</div>
+      <div class="dod-value"><span class="dod-check">✓</span>Dois projetos paralelos sem vazamento de estado</div>
+    </div>
+    <div class="dod-item">
+      <div class="dod-label">DoD 4</div>
+      <div class="dod-value"><span class="dod-check">✓</span><code>npx agentic-squad init</code> sem erros em projeto limpo</div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       T1 — TESTES AUTOMATIZADOS
+  ══════════════════════════════════════════════════════════════════════ -->
+  <hr class="divider" />
+
+  <div class="phase-header">
+    <div class="phase-icon phase-icon-a">🧪</div>
+    <div>
+      <h2>T1 — Suite de Testes Automatizados (244 testes)</h2>
+      <p>Validação base: todos os testes devem passar antes de prosseguir com os demais itens.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">1</div>
+      <h3>Executar a suite completa de testes</h3>
+    </div>
+    <p>No diretório raiz do projeto, execute:</p>
+    <pre><span class="c"># Suite completa com output detalhado</span>
+<span class="k">npx</span> vitest run --reporter=verbose
+
+<span class="c"># Ou via npm script</span>
+<span class="k">npm</span> test</pre>
+    <p style="margin-top:0.75rem"><strong>Output esperado (final):</strong></p>
+    <pre><span class="s">Test Files  15 passed (15)</span>
+<span class="s">     Tests  244 passed (244)</span>
+<span class="c">  Duration  ~3s</span></pre>
+    <ul class="checklist">
+      <li><strong>15 arquivos de teste</strong> passando — nenhum com status <code>failed</code></li>
+      <li><strong>244 testes</strong> passando — nenhum com status <code>failed</code> ou <code>skipped</code></li>
+      <li>Zero erros de importação ou mock</li>
+    </ul>
+    <div class="kv"><span class="k">Se algum falhar</span><span class="v">Execute <code>npx vitest run --reporter=verbose 2&gt;&amp;1 | grep FAIL</code> para identificar o arquivo e investigue antes de prosseguir.</span></div>
+  </div>
+
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">2</div>
+      <h3>Verificar tipos TypeScript (zero erros)</h3>
+    </div>
+    <pre><span class="k">npx</span> tsc --noEmit</pre>
+    <ul class="checklist">
+      <li>Comando termina sem output e com exit code 0</li>
+      <li>Nenhum erro de tipo em nenhum dos 38+ arquivos <code>.ts</code></li>
+    </ul>
+    <div class="kv"><span class="k">Arquivos críticos</span><span class="v">Qualquer erro em <code>src/queue/index.ts</code>, <code>src/agents/*.ts</code> ou <code>src/db/schema.ts</code> indica regressão no isolamento multi-projeto.</span></div>
+  </div>
+
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">3</div>
+      <h3>Cobertura de testes (opcional — referência)</h3>
+    </div>
+    <pre><span class="k">npm</span> run test:coverage</pre>
+    <p style="margin-top:0.6rem">Abre relatório em <code>coverage/index.html</code> com detalhamento por arquivo. Os módulos críticos da Fase 5 que devem ter cobertura:</p>
+    <table>
+      <thead><tr><th>Módulo</th><th>Testes correspondentes</th><th>Cobertura esperada</th></tr></thead>
+      <tbody>
+        <tr><td><code>src/versioning/changelog.ts</code></td><td><code>changelog.test.ts</code> (38 casos)</td><td class="ok">≥ 95%</td></tr>
+        <tr><td><code>src/cli/stack-detector.ts</code></td><td><code>stack-detector.test.ts</code> (38 casos)</td><td class="ok">≥ 95%</td></tr>
+        <tr><td><code>src/db/migrate-runner.ts</code></td><td><code>migrate-runner.test.ts</code></td><td class="ok">≥ 80%</td></tr>
+        <tr><td><code>src/lib/metrics.ts</code></td><td><code>multi-project-isolation.test.ts</code></td><td class="ok">≥ 80%</td></tr>
+        <tr><td><code>src/config/squad.config.ts</code></td><td><code>squad.config.test.ts</code></td><td class="ok">≥ 80%</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       T2 — SQUAD.CONFIG.TS
+  ══════════════════════════════════════════════════════════════════════ -->
+  <hr class="divider" />
+
+  <div class="phase-header">
+    <div class="phase-icon phase-icon-b">⚙️</div>
+    <div>
+      <h2>T2 — Arquivo de Configuração por Projeto (squad.config.ts)</h2>
+      <p>Valida que o schema Zod cobre todos os campos obrigatórios e que a config é lida corretamente das env vars.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">4</div>
+      <h3>Inspecionar o schema exportado</h3>
+    </div>
+    <p>Abra <code>src/config/squad.config.ts</code> e confirme a presença das 5 seções obrigatórias:</p>
+    <div class="flow">
+<span class="ok">jira</span>: { baseUrl, projectKey, statusMap }
+<span class="ok">github</span>: { owner, repo, defaultBranch }
+<span class="ok">ci</span>: { testCommand, coverageCommand, coverageThreshold }
+<span class="ok">agents</span>: { devConcurrency, timeouts.ciMs, timeouts.agentMs, models.default, models.fast }
+<span class="ok">notifications</span>: { onGateReached?, onError? }
+    </div>
+    <ul class="checklist">
+      <li>Todas as 5 seções presentes no <code>SquadConfigSchema</code></li>
+      <li><code>coverageThreshold</code> validado com <code>.int().min(0).max(100)</code></li>
+      <li><code>onGateReached</code> e <code>onError</code> validados como <code>.url().optional()</code></li>
+      <li><code>statusMap</code> customizável via <code>JIRA_STATUS_MAP</code> (JSON no env)</li>
+    </ul>
+  </div>
+
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">5</div>
+      <h3>Rodar o teste de config isolado</h3>
+    </div>
+    <pre><span class="k">npx</span> vitest run src/config/squad.config.test.ts --reporter=verbose</pre>
+    <p style="margin-top:0.6rem">O arquivo de teste valida:</p>
+    <ul>
+      <li>Leitura correta de todas as env vars com valores padrão</li>
+      <li>Falha explícita quando vars obrigatórias estão ausentes</li>
+      <li>Parsing de <code>JIRA_STATUS_MAP</code> como JSON customizado</li>
+      <li>Validação de <code>coverageThreshold</code> fora do intervalo 0–100</li>
+    </ul>
+    <div class="kv"><span class="k">Resultado esperado</span><span class="v">Todos os testes do arquivo passando, sem erros de schema Zod.</span></div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       T3 — CLI DE ONBOARDING
+  ══════════════════════════════════════════════════════════════════════ -->
+  <hr class="divider" />
+
+  <div class="phase-header">
+    <div class="phase-icon phase-icon-c">🚀</div>
+    <div>
+      <h2>T3 — CLI de Onboarding (agentic-squad)</h2>
+      <p>Valida o entrypoint npm, o wizard interativo de 7 steps e os subcomandos changelog e migrate.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num step-num-cli">3.1</div>
+      <h3 class="cli-title">Verificar o entrypoint npm publicável</h3>
+    </div>
+    <p>Execute o binário diretamente (sem instalar globalmente):</p>
+    <pre><span class="c"># Verificar help</span>
+<span class="k">node</span> bin/agentic-squad.js --help
+
+<span class="c"># Ou após instalar globalmente</span>
+<span class="k">npm</span> install -g .
+<span class="k">agentic-squad</span> --help</pre>
+    <p style="margin-top:0.75rem"><strong>Output esperado:</strong></p>
+    <pre>agentic-squad — Squad 100% Agêntica
+
+Uso:
+  agentic-squad <span class="v">init</span>            Wizard de configuração interativo
+  agentic-squad <span class="v">changelog</span>       Gera CHANGELOG.md com base nos commits
+  agentic-squad <span class="v">migrate</span> &lt;cmd&gt;   Controle de migrações de schema</pre>
+    <ul class="checklist">
+      <li>Comando executa sem erros de sintaxe JavaScript</li>
+      <li>Três subcomandos listados: <code>init</code>, <code>changelog</code>, <code>migrate</code></li>
+      <li>Subcomando inválido retorna mensagem de erro + exit code 1</li>
+    </ul>
+    <div class="kv"><span class="k">Testar subcomando inválido</span><span class="v"><code>node bin/agentic-squad.js foobar</code> → deve imprimir "Subcomando desconhecido" e sair com erro.</span></div>
+  </div>
+
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num step-num-cli">3.2</div>
+      <h3 class="cli-title">Verificar os 7 steps do wizard <code>agentic-squad init</code></h3>
+    </div>
+    <p>Este step valida a estrutura do wizard <em>sem executá-lo de ponta a ponta</em> (o que requer credenciais reais). Inspecione o código e confirme cada step:</p>
+    <pre><span class="c"># Ver os steps do wizard</span>
+<span class="k">grep</span> -n "step(" scripts/init.ts</pre>
+    <p style="margin-top:0.75rem"><strong>Saída esperada — 7 steps obrigatórios:</strong></p>
+    <div class="flow">
+<span class="dim">Step 1</span>  <span class="auto">Configuração do Jira</span>              <span class="dim">← validateJiraAccess()</span>
+<span class="dim">Step 2</span>  <span class="auto">Configuração do GitHub App</span>         <span class="dim">← validateGitHubAccess()</span>
+<span class="dim">Step 3</span>  <span class="auto">Detecção de stack</span>                  <span class="dim">← detectStackFromGitHub()</span>
+<span class="dim">Step 4</span>  <span class="auto">URL do serviço</span>                     <span class="dim">← checkServiceHealth()</span>
+<span class="dim">Step 5</span>  <span class="auto">Instalando GitHub Actions workflow</span>  <span class="dim">← installAgentDevWorkflow()</span>
+<span class="dim">Step 6</span>  <span class="auto">Registrando webhook no Jira</span>        <span class="dim">← registerJiraWebhook()</span>
+<span class="dim">Step 7</span>  <span class="auto">Smoke test (ponta a ponta)</span>         <span class="dim">← runSmokeTest()</span>
+    </div>
+    <ul class="checklist">
+      <li>7 chamadas a <code>step(N, TOTAL_STEPS, '...')</code> presentes no script</li>
+      <li>Step 5 chama <code>installAgentDevWorkflow()</code> de <code>src/cli/github-setup.ts</code></li>
+      <li>Step 6 chama <code>registerJiraWebhook()</code> de <code>src/cli/jira-setup.ts</code></li>
+      <li>Step 7 chama <code>runSmokeTest()</code> de <code>src/cli/smoke-test.ts</code> com limpeza automática após o teste</li>
+    </ul>
+  </div>
+
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num step-num-cli">3.3</div>
+      <h3 class="cli-title">Testar <code>agentic-squad changelog --dry-run</code></h3>
+    </div>
+    <p>O changelog pode ser testado sem credenciais — ele lê apenas o histórico git local.</p>
+    <pre><span class="c"># Ver o que seria gerado sem escrever arquivo</span>
+<span class="k">node</span> bin/agentic-squad.js changelog --dry-run
+
+<span class="c"># Ver apenas a nova entrada no stdout</span>
+<span class="k">node</span> bin/agentic-squad.js changelog --stdout</pre>
+    <p style="margin-top:0.75rem"><strong>Output esperado (dry-run):</strong></p>
+    <pre><span class="c"># Deve imprimir a versão detectada, bump semântico e a entrada formatada:</span>
+<span class="v">Versão atual: 0.1.0</span>
+<span class="v">Bump detectado: minor</span>  <span class="c">← ou patch/major dependendo dos commits</span>
+<span class="v">Nova versão: 0.2.0</span>
+<span class="v">[DRY-RUN] Nada gravado.</span></pre>
+    <ul class="checklist">
+      <li>Script executa sem erro e imprime a versão detectada</li>
+      <li>Bump semântico calculado corretamente (<code>feat</code> → minor, <code>fix</code> → patch, <code>feat!</code> → major)</li>
+      <li>Com <code>--dry-run</code>: arquivo <code>CHANGELOG.md</code> <strong>não</strong> é modificado</li>
+      <li>Com <code>--stdout</code>: apenas a nova entrada é impressa (sem header do arquivo)</li>
+    </ul>
+  </div>
+
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num step-num-cli">3.4</div>
+      <h3 class="cli-title">Testar <code>agentic-squad migrate status</code></h3>
+    </div>
+    <p>Requer <code>DATABASE_URL</code> no <code>.env</code>. O comando lê o journal e o banco sem alterar nada.</p>
+    <pre><span class="c"># Via npm script (carrega .env automaticamente)</span>
+<span class="k">npm</span> run migrate:status
+
+<span class="c"># Ou direto com tsx</span>
+<span class="k">npx</span> tsx --env-file=.env scripts/migrate.ts status</pre>
+    <p style="margin-top:0.75rem"><strong>Output esperado:</strong></p>
+    <pre>Migrações: <span class="v">2</span> total | <span class="v">2</span> aplicadas | <span class="v">0</span> pendentes
+
+✓ Aplicadas:
+  [0000] 0000_handy_slapstick  <span class="c">(data de aplicação)</span>
+  [0001] 0001_project_key_isolation  <span class="c">(data de aplicação)</span></pre>
+    <ul class="checklist">
+      <li>2 migrações listadas: <code>0000_handy_slapstick</code> e <code>0001_project_key_isolation</code></li>
+      <li>Ambas com status <code>applied</code> (se o banco está atualizado)</li>
+      <li>Se houver migrações pendentes, executar <code>npm run migrate:run</code> antes de prosseguir</li>
+      <li>Nenhum alerta de operações destrutivas pendentes</li>
+    </ul>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       T4 — DETECÇÃO DE STACK
+  ══════════════════════════════════════════════════════════════════════ -->
+  <hr class="divider" />
+
+  <div class="phase-header">
+    <div class="phase-icon phase-icon-d">🔍</div>
+    <div>
+      <h2>T4 — Detecção Automática de Stack</h2>
+      <p>Valida que o detector lê manifests e configura testCommand/coverageCommand corretamente para 7 linguagens.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">6</div>
+      <h3>Executar os testes do stack-detector (38 casos)</h3>
+    </div>
+    <pre><span class="k">npx</span> vitest run src/cli/stack-detector.test.ts --reporter=verbose</pre>
+    <p style="margin-top:0.75rem"><strong>Resultado esperado — 38/38:</strong></p>
+    <pre><span class="s">Test Files  1 passed (1)</span>
+<span class="s">     Tests  38 passed (38)</span></pre>
+    <table style="margin-top:0.85rem">
+      <thead><tr><th>Suite</th><th>Testes</th><th>O que cobre</th></tr></thead>
+      <tbody>
+        <tr><td><code>detectNodeStack</code></td><td class="ok">10</td><td>npm/yarn/pnpm, vitest/jest/mocha, lockfile hints</td></tr>
+        <tr><td><code>detectPythonStack</code></td><td class="ok">5</td><td>pip/poetry/pdm, pyproject.toml/setup.py/requirements.txt</td></tr>
+        <tr><td><code>detectJavaStack</code></td><td class="ok">4</td><td>maven/gradle/gradle-kts, prioridade maven</td></tr>
+        <tr><td><code>detectGoStack</code></td><td class="ok">1</td><td>go test ./..., coverprofile</td></tr>
+        <tr><td><code>detectRustStack</code></td><td class="ok">1</td><td>cargo test, llvm-cov</td></tr>
+        <tr><td><code>detectRubyStack</code></td><td class="ok">3</td><td>rspec/minitest, default rspec</td></tr>
+        <tr><td><code>detectPhpStack</code></td><td class="ok">1</td><td>phpunit</td></tr>
+        <tr><td><code>detectFromManifests</code></td><td class="ok">13</td><td>prioridade, null values, lockfile hints, todos os campos</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">7</div>
+      <h3>Verificar detecção local no próprio repositório</h3>
+    </div>
+    <p>O detector tem uma função <code>detectStackLocal()</code> que lê o filesystem. Teste-a diretamente:</p>
+    <pre><span class="k">node</span> -e <span class="s">"
+const { detectStackLocal } = require('./src/cli/stack-detector');
+<span class="c">// Nota: requer compilação prévia ou tsx</span>
+"</span>
+
+<span class="c"># Via tsx (sem build)</span>
+<span class="k">npx</span> tsx -e <span class="s">"
+import { detectStackLocal } from './src/cli/stack-detector.ts';
+const r = detectStackLocal();
+console.log(JSON.stringify(r, null, 2));
+"</span></pre>
+    <p style="margin-top:0.75rem"><strong>Output esperado (este repositório é Node.js):</strong></p>
+    <pre>{
+  <span class="s">"language"</span>: <span class="v">"nodejs"</span>,
+  <span class="s">"buildTool"</span>: <span class="v">"npm"</span>,
+  <span class="s">"testFramework"</span>: <span class="v">"vitest"</span>,
+  <span class="s">"testCommand"</span>: <span class="v">"npm test"</span>,
+  <span class="s">"coverageCommand"</span>: <span class="v">"npm run test:coverage"</span>,
+  <span class="s">"coverageThreshold"</span>: <span class="v">80</span>,
+  <span class="s">"detected"</span>: <span class="v">true</span>,
+  <span class="s">"manifests"</span>: [<span class="v">"package.json"</span>]
+}</pre>
+    <ul class="checklist">
+      <li><code>language: "nodejs"</code> detectado via <code>package.json</code></li>
+      <li><code>testFramework: "vitest"</code> detectado via <code>devDependencies</code></li>
+      <li><code>detected: true</code></li>
+      <li><code>manifests</code> contém <code>"package.json"</code></li>
+    </ul>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       T5 — ISOLAMENTO MULTI-PROJETO
+  ══════════════════════════════════════════════════════════════════════ -->
+  <hr class="divider" />
+
+  <div class="phase-header">
+    <div class="phase-icon phase-icon-e">🔒</div>
+    <div>
+      <h2>T5 — Isolamento Multi-Projeto</h2>
+      <p>Valida que dois projetos (SCRUM e PROJ) coexistem na mesma instância sem vazamento de estado, logs ou custos.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">8</div>
+      <h3>Executar os testes de isolamento (15 + 17 casos)</h3>
+    </div>
+    <pre><span class="c"># Testes de isolamento de métricas</span>
+<span class="k">npx</span> vitest run src/lib/multi-project-isolation.test.ts --reporter=verbose
+
+<span class="c"># PoC com dois projetos reais (SCRUM vs PROJ)</span>
+<span class="k">npx</span> vitest run src/tests/integration/multi-project-poc.test.ts --reporter=verbose</pre>
+    <p style="margin-top:0.75rem"><strong>Resultado esperado — 32/32:</strong></p>
+    <pre><span class="s">multi-project-isolation.test.ts  15 passed</span>
+<span class="s">multi-project-poc.test.ts        17 passed</span></pre>
+    <table style="margin-top:0.85rem">
+      <thead><tr><th>Suite do PoC</th><th>O que prova</th></tr></thead>
+      <tbody>
+        <tr><td>Derivação de projectKey</td><td><code>SCRUM-100</code> → <code>SCRUM</code>, <code>PROJ-200</code> → <code>PROJ</code>, nunca se misturam</td></tr>
+        <tr><td>upsertStory por projeto</td><td>SCRUM grava <code>projectKey=SCRUM</code>, PROJ grava <code>projectKey=PROJ</code>, cross-contamination impossível</td></tr>
+        <tr><td>Job data por projeto</td><td><code>OrchestratorJobData.projectKey</code> obrigatório; TypeScript impede compilar sem ele</td></tr>
+        <tr><td>Interface de métricas</td><td>Todas as funções aceitam <code>projectKey?</code> opcional; <code>getCostByProject()</code> agrupa por projeto</td></tr>
+        <tr><td>Motor inalterado</td><td><code>projectKey</code> derivado do <code>jiraKey</code> — motor não contém nenhum nome de projeto hardcoded</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">9</div>
+      <h3>Verificar coluna <code>project_key</code> no schema do banco</h3>
+    </div>
+    <pre><span class="c"># Inspecionar o schema Drizzle</span>
+<span class="k">grep</span> -n "projectKey\|project_key" src/db/schema.ts</pre>
+    <p style="margin-top:0.75rem"><strong>Saída esperada:</strong></p>
+    <pre><span class="v">62</span>:    projectKey: text(<span class="s">'project_key'</span>).notNull().default(<span class="s">'SCRUM'</span>),
+<span class="v">74</span>:    index(<span class="s">'stories_project_key_idx'</span>).on(t.projectKey),</pre>
+    <ul class="checklist">
+      <li>Campo <code>project_key</code> presente na tabela <code>stories</code></li>
+      <li>Valor padrão <code>'SCRUM'</code> garante compatibilidade retroativa com dados anteriores</li>
+      <li>Índice <code>stories_project_key_idx</code> criado para performance de queries filtradas</li>
+    </ul>
+
+    <p style="margin-top:0.85rem">Confirme no banco de dados (Supabase Table Editor ou psql):</p>
+    <pre><span class="c">-- Via psql ou Supabase SQL Editor</span>
+<span class="k">SELECT</span> column_name, data_type, column_default
+<span class="k">FROM</span> information_schema.columns
+<span class="k">WHERE</span> table_name = <span class="s">'stories'</span> <span class="k">AND</span> column_name = <span class="s">'project_key'</span>;
+
+<span class="c">-- Resultado esperado:</span>
+<span class="c">-- project_key | text | 'SCRUM'::text</span></pre>
+    <ul class="checklist">
+      <li>Coluna <code>project_key</code> existe na tabela <code>stories</code></li>
+      <li>Tipo <code>text</code>, default <code>'SCRUM'</code></li>
+      <li>Índice presente: <code>SELECT * FROM pg_indexes WHERE tablename='stories'</code> deve listar <code>stories_project_key_idx</code></li>
+    </ul>
+  </div>
+
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">10</div>
+      <h3>Verificar propagação do <code>projectKey</code> por toda a cadeia</h3>
+    </div>
+    <p>Confirme que <code>projectKey</code> está presente em todos os pontos críticos:</p>
+    <pre><span class="c"># 1. OrchestratorJobData (contrato da fila)</span>
+<span class="k">grep</span> -n "projectKey" src/queue/index.ts
+
+<span class="c"># 2. Todos os agentes incluem projectKey no JobData</span>
+<span class="k">grep</span> -n "projectKey" src/agents/po.ts src/agents/lt.ts src/agents/dev-agent.ts src/agents/qa-agent.ts
+
+<span class="c"># 3. Webhook extrai projectKey do jiraKey</span>
+<span class="k">grep</span> -n "split.*projectKey\|projectKey.*split" src/webhooks/jira.ts
+
+<span class="c"># 4. Logs incluem projectKey em todos os eventos</span>
+<span class="k">grep</span> -n "projectKey" src/lib/logger.ts</pre>
+    <ul class="checklist">
+      <li><code>src/queue/index.ts</code>: <code>projectKey: string</code> em <code>OrchestratorJobData</code></li>
+      <li>Cada arquivo de agente: <code>projectKey: string</code> no tipo <code>*AgentJobData</code> e em <code>log.child()</code></li>
+      <li><code>src/webhooks/jira.ts</code>: <code>projectKey: issue.key.split('-')[0]!</code></li>
+      <li><code>src/lib/logger.ts</code>: <code>projectKey?: string</code> em <code>AgentEventFields</code></li>
+    </ul>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       T6 — VERSIONAMENTO
+  ══════════════════════════════════════════════════════════════════════ -->
+  <hr class="divider" />
+
+  <div class="phase-header">
+    <div class="phase-icon phase-icon-f">📜</div>
+    <div>
+      <h2>T6 — Versionamento da Squad</h2>
+      <p>Valida o gerador de changelog (Conventional Commits) e o runner de migrações com detecção de operações destrutivas.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">11</div>
+      <h3>Executar os testes de changelog e migrate-runner</h3>
+    </div>
+    <pre><span class="c"># Changelog (38 testes)</span>
+<span class="k">npx</span> vitest run src/versioning/changelog.test.ts --reporter=verbose
+
+<span class="c"># Migrate runner</span>
+<span class="k">npx</span> vitest run src/db/migrate-runner.test.ts --reporter=verbose</pre>
+    <p style="margin-top:0.75rem"><strong>Resultado esperado:</strong></p>
+    <pre><span class="s">changelog.test.ts      passando — parseCommit, parseGitLog, bump, groupCommits, upsertChangelog</span>
+<span class="s">migrate-runner.test.ts passando — readJournal, detectDestructive, getMigrationReport, formatReport</span></pre>
+    <table style="margin-top:0.85rem">
+      <thead><tr><th>Funcionalidade</th><th>Caso crítico verificado</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><code>parseCommit</code> — tipos desconhecidos</td>
+          <td><code>WIP: trabalho em progresso</code> → <code>type: unknown</code>, <code>subject: "WIP: trabalho em progresso"</code> (subject raw preservado — bug corrigido)</td>
+        </tr>
+        <tr>
+          <td><code>determineVersionBump</code></td>
+          <td><code>feat!</code> → major; <code>feat</code> → minor; <code>fix/perf/refactor</code> → patch; <code>chore/docs</code> → none</td>
+        </tr>
+        <tr>
+          <td><code>upsertChangelog</code></td>
+          <td>Não duplica entrada se chamada duas vezes; insere após <code>[Unreleased]</code>; preserva entradas anteriores</td>
+        </tr>
+        <tr>
+          <td><code>detectDestructiveOps</code></td>
+          <td><code>DROP TABLE</code> → risk: high; <code>ALTER COLUMN</code> → risk: medium; <code>ADD COLUMN</code> → nenhum alerta</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">12</div>
+      <h3>Verificar o journal de migrações — 2 entradas registradas</h3>
+    </div>
+    <pre><span class="c"># Ver o journal</span>
+<span class="k">cat</span> src/db/migrations/meta/_journal.json
+
+<span class="c"># Listar arquivos SQL</span>
+<span class="k">ls</span> src/db/migrations/*.sql</pre>
+    <p style="margin-top:0.75rem"><strong>Output esperado do journal:</strong></p>
+    <pre>{
+  <span class="s">"version"</span>: <span class="v">"7"</span>,
+  <span class="s">"dialect"</span>: <span class="v">"postgresql"</span>,
+  <span class="s">"entries"</span>: [
+    { <span class="s">"idx"</span>: <span class="v">0</span>, <span class="s">"tag"</span>: <span class="v">"0000_handy_slapstick"</span> },
+    { <span class="s">"idx"</span>: <span class="v">1</span>, <span class="s">"tag"</span>: <span class="v">"0001_project_key_isolation"</span> }
+  ]
+}</pre>
+    <ul class="checklist">
+      <li>2 entradas no journal: <code>idx 0</code> e <code>idx 1</code></li>
+      <li>Arquivo <code>0001_project_key_isolation.sql</code> presente em <code>src/db/migrations/</code></li>
+      <li>SQL da migração: <code>ALTER TABLE "stories" ADD COLUMN "project_key" text NOT NULL DEFAULT 'SCRUM'</code></li>
+      <li>Índice: <code>CREATE INDEX "stories_project_key_idx"</code></li>
+    </ul>
+  </div>
+
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">13</div>
+      <h3>Testar proteção contra migrações destrutivas</h3>
+    </div>
+    <p>Crie temporariamente um arquivo SQL destrutivo e verifique que o runner o bloqueia:</p>
+    <pre><span class="c"># Cria um SQL destrutivo de teste</span>
+<span class="k">echo</span> 'DROP TABLE "stories";' > /tmp/test_destructive.sql
+
+<span class="c"># Simula detecção via Node.js (sem tocar no banco)</span>
+<span class="k">npx</span> tsx -e <span class="s">"
+import { detectDestructiveOps } from './src/db/migrate-runner.ts';
+const ops = detectDestructiveOps('DROP TABLE \"stories\";', 'test');
+console.log(ops);
+"</span></pre>
+    <p style="margin-top:0.75rem"><strong>Output esperado:</strong></p>
+    <pre>[
+  {
+    <span class="s">"tag"</span>: <span class="v">"test"</span>,
+    <span class="s">"statement"</span>: <span class="v">"DROP TABLE \"stories\""</span>,
+    <span class="s">"risk"</span>: <span class="v">"high"</span>
+  }
+]</pre>
+    <ul class="checklist">
+      <li><code>DROP TABLE</code> detectado como <code>risk: "high"</code></li>
+      <li>O runner bloquearia a execução sem <code>--force</code></li>
+      <li><code>ADD COLUMN</code> não gera nenhuma entrada (operação segura)</li>
+    </ul>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       T7 — PUBLICAÇÃO NPM E DOCUMENTAÇÃO
+  ══════════════════════════════════════════════════════════════════════ -->
+  <hr class="divider" />
+
+  <div class="phase-header">
+    <div class="phase-icon phase-icon-a">📦</div>
+    <div>
+      <h2>T7 — Publicação npm e Documentação</h2>
+      <p>Valida o pacote pronto para publicação, o README, RUNBOOK e COST_GUIDE, e simula o <code>npm pack</code>.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">14</div>
+      <h3>Verificar configuração do <code>package.json</code> para publicação</h3>
+    </div>
+    <pre><span class="c"># Inspecionar campos de publicação</span>
+<span class="k">node</span> -e <span class="s">"
+const p = require('./package.json');
+console.table({
+  name: p.name,
+  version: p.version,
+  license: p.license,
+  bin: JSON.stringify(p.bin),
+  files_count: p.files?.length,
+  publishConfig: JSON.stringify(p.publishConfig),
+  keywords_count: p.keywords?.length,
+  prepublishOnly: p.scripts?.prepublishOnly,
+  tsx_in_deps: !!p.dependencies?.tsx
+});
+"</span></pre>
+    <p style="margin-top:0.75rem"><strong>Output esperado:</strong></p>
+    <table>
+      <thead><tr><th>Campo</th><th>Valor esperado</th></tr></thead>
+      <tbody>
+        <tr><td><code>name</code></td><td class="ok">agentic-squad-heavy</td></tr>
+        <tr><td><code>license</code></td><td class="ok">MIT</td></tr>
+        <tr><td><code>bin</code></td><td class="ok">{"agentic-squad": "bin/agentic-squad.js"} (não .ts!)</td></tr>
+        <tr><td><code>files_count</code></td><td class="ok">6 (bin, dist, scripts, src/db/migrations, README.md, CHANGELOG.md)</td></tr>
+        <tr><td><code>publishConfig</code></td><td class="ok">{"access": "public"}</td></tr>
+        <tr><td><code>keywords_count</code></td><td class="ok">11</td></tr>
+        <tr><td><code>prepublishOnly</code></td><td class="ok">npm run build && npm test</td></tr>
+        <tr><td><code>tsx_in_deps</code></td><td class="ok">true (tsx em dependencies, não devDependencies)</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">15</div>
+      <h3>Simular o pacote npm com <code>npm pack --dry-run</code></h3>
+    </div>
+    <pre><span class="c"># Listar arquivos que seriam publicados</span>
+<span class="k">npm</span> pack --dry-run 2>&amp;1 | grep "npm notice"</pre>
+    <p style="margin-top:0.75rem"><strong>Verificar que os arquivos corretos estão incluídos:</strong></p>
+    <ul class="checklist">
+      <li><code>README.md</code> presente (≥ 15 kB)</li>
+      <li><code>bin/agentic-squad.js</code> presente</li>
+      <li><code>dist/**</code> presente (JavaScript compilado)</li>
+      <li><code>scripts/init.ts</code>, <code>scripts/changelog.ts</code>, <code>scripts/migrate.ts</code> presentes</li>
+      <li><code>src/db/migrations/*.sql</code> presente (inclui <code>0001_project_key_isolation.sql</code>)</li>
+      <li><strong>Ausentes:</strong> <code>src/**/*.test.ts</code>, <code>.env</code>, <code>docs/</code>, <code>key/</code>, <code>coverage/</code></li>
+    </ul>
+    <div class="kv"><span class="k">Tamanho esperado</span><span class="v">Tarball &lt; 500 kB comprimido. Se ultrapassar, investigar arquivos grandes não excluídos pelo <code>.npmignore</code>.</span></div>
+  </div>
+
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num step-num-check">✓</div>
+      <h3 class="check-title">Verificar documentação — 3 arquivos obrigatórios</h3>
+    </div>
+    <pre><span class="c"># Confirmar existência e tamanho mínimo</span>
+<span class="k">ls</span> -la README.md RUNBOOK.md COST_GUIDE.md</pre>
+    <table>
+      <thead><tr><th>Arquivo</th><th>Tamanho mínimo</th><th>Seções obrigatórias</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><code>README.md</code></td>
+          <td class="ok">≥ 10 kB</td>
+          <td>Início Rápido, Variáveis de Ambiente, Arquitetura, Rotas da API, CLI, Banco e Migrações, Segurança</td>
+        </tr>
+        <tr>
+          <td><code>RUNBOOK.md</code></td>
+          <td class="ok">≥ 5 kB</td>
+          <td>Saúde do Sistema, Alertas Betterstack, Incidentes Frequentes, DLQ, Deploy, Onboarding &lt; 10 min, Manutenção</td>
+        </tr>
+        <tr>
+          <td><code>COST_GUIDE.md</code></td>
+          <td class="ok">≥ 5 kB</td>
+          <td>Tabela de Preços, Custo por História, Consultando via API, Alertas, Estratégias de Redução, Orçamento Mensal</td>
+        </tr>
+      </tbody>
+    </table>
+    <pre><span class="c"># Confirmar seções chave no README</span>
+<span class="k">grep</span> -c "##" README.md   <span class="c"># deve ser ≥ 10 seções</span>
+
+<span class="c"># Confirmar tabela de env vars (18 variáveis)</span>
+<span class="k">grep</span> -c "JIRA_\|GITHUB_\|ANTHROPIC_\|DATABASE_\|REDIS_\|COST_\|AGENTS_\|BETTERSTACK_" README.md</pre>
+    <ul class="checklist">
+      <li><code>README.md</code>: tabela de variáveis com ≥ 15 entradas documentadas</li>
+      <li><code>RUNBOOK.md</code>: seção "Onboarding de Novo Projeto (&lt; 10 minutos)" com tempo estimado por step</li>
+      <li><code>COST_GUIDE.md</code>: tabela de preços por modelo com USD/1M tokens de entrada e saída</li>
+    </ul>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       CHECKLIST FINAL DoD
+  ══════════════════════════════════════════════════════════════════════ -->
+  <hr class="divider" />
+
+  <p class="section-title">Checklist Final — Definition of Done</p>
+
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num step-num-gate">DoD</div>
+      <h3 class="gate-title">Verificação dos 4 critérios de conclusão da Fase 5</h3>
+    </div>
+
+    <p style="font-weight:600; margin-bottom:0.5rem;">DoD 1 — Segundo projeto via configuração, motor inalterado</p>
+    <ul class="checklist">
+      <li>Nenhum nome de projeto (SCRUM, PROJ, etc.) hardcoded em <code>src/orchestrator/worker.ts</code> ou <code>src/orchestrator/reconciler.ts</code></li>
+      <li><code>projectKey</code> derivado automaticamente de <code>jiraKey.split('-')[0]</code> — zero config extra</li>
+      <li>Para onboarding de um segundo projeto: apenas alterar <code>JIRA_PROJECT_KEY</code> e <code>GITHUB_REPO</code> no <code>.env</code></li>
+      <li>Teste do PoC (17 casos) passa, provando isolamento completo entre SCRUM e PROJ</li>
+    </ul>
+
+    <p style="font-weight:600; margin-top:1rem; margin-bottom:0.5rem;">DoD 2 — Onboarding completo em &lt; 10 minutos</p>
+    <ul class="checklist">
+      <li>RUNBOOK documenta 7 steps com tempo estimado (total ~7 min)</li>
+      <li>Steps 5 e 6 são <strong>automáticos</strong> (instala workflow CI e registra webhook sem intervenção)</li>
+      <li>Step 3 detecta stack automaticamente — sem configuração manual de <code>CI_TEST_COMMAND</code></li>
+      <li>Wizard valida cada credencial em tempo real — falha rápida se algo estiver errado</li>
+    </ul>
+
+    <p style="font-weight:600; margin-top:1rem; margin-bottom:0.5rem;">DoD 3 — Dois projetos paralelos sem vazamento de estado</p>
+    <ul class="checklist">
+      <li>Banco: <code>stories.project_key</code> segrega dados — query de SCRUM nunca retorna dados de PROJ</li>
+      <li>Logs: <code>projectKey</code> em todos os eventos — filtrável no Betterstack por projeto</li>
+      <li>Métricas: <code>getAvgDurationByAgent('SCRUM')</code> e <code>getAvgDurationByAgent('PROJ')</code> retornam resultados independentes</li>
+      <li>Custo: <code>getCostByProject()</code> agrega separado por projeto — sem cross-contamination</li>
+    </ul>
+
+    <p style="font-weight:600; margin-top:1rem; margin-bottom:0.5rem;">DoD 4 — <code>npx agentic-squad init</code> sem erros em projeto limpo</p>
+    <ul class="checklist">
+      <li><code>node bin/agentic-squad.js --help</code> executa sem erros</li>
+      <li><code>node bin/agentic-squad.js invalid-cmd</code> retorna exit code 1 com mensagem clara</li>
+      <li><code>bin/agentic-squad.js</code> usa <code>#!/usr/bin/env node</code> (não requer tsx global)</li>
+      <li><code>tsx</code> está em <code>dependencies</code> (não devDependencies) — disponível após <code>npm install -g</code></li>
+    </ul>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       RESULTADO FINAL
+  ══════════════════════════════════════════════════════════════════════ -->
+  <div class="box box-success" style="margin-top:2rem">
+    <strong>✅ Fase 5 — Aprovação completa</strong>
+    <p>Se todos os checklists acima estiverem marcados, a Fase 5 está validada:</p>
+    <ul>
+      <li><strong>244/244 testes passando</strong> — zero falhas ou skips</li>
+      <li><strong>TypeScript: 0 erros</strong> — <code>tsc --noEmit</code> limpo</li>
+      <li><strong>6 entregáveis completos:</strong> squad.config, CLI init/changelog/migrate, stack-detector, isolamento multi-projeto, versionamento, npm publish</li>
+      <li><strong>4 critérios DoD atendidos:</strong> configuração sem alterar motor, onboarding &lt; 10 min, isolamento total, CLI funcional em projeto limpo</li>
+    </ul>
+  </div>
+
+  <div class="box box-info" style="margin-top:1rem">
+    <strong>Próximos passos após validação</strong>
+    <ul>
+      <li>Executar <code>npm publish</code> após <code>npm login</code> na conta npm da organização</li>
+      <li>Onboarding do segundo projeto real: copiar <code>.env</code>, alterar <code>JIRA_PROJECT_KEY</code> e <code>GITHUB_REPO</code>, executar <code>agentic-squad init</code></li>
+      <li>Configurar dashboard Betterstack com filtro por <code>projectKey</code> para monitorar projetos separadamente</li>
+      <li>Agendar renovação do webhook Jira em 30 dias (<code>agentic-squad init</code> renova automaticamente)</li>
+    </ul>
+  </div>
+
+  <footer>
+    Squad Agêntica — Fase 5 — Gerado em 2026-05-28 &nbsp;|&nbsp;
+    244 testes &nbsp;·&nbsp; TypeScript strict &nbsp;·&nbsp; MIT License
+  </footer>
+
+</div>
+</body>
+</html>
