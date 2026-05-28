@@ -52,6 +52,8 @@ src/
 │   └── index.ts
 ├── queue/
 │   └── index.ts       # Configuração Redis/BullMQ compartilhada
+├── routes/
+│   └── ping.ts        # GET /ping — health check leve (status + version)
 ├── webhooks/
 │   └── jira.ts        # POST /webhooks/jira — recebe eventos Jira
 └── index.ts           # Entrypoint: Express + workers + graceful shutdown
@@ -101,6 +103,7 @@ ANTHROPIC_MODEL=claude-opus-4-7
 |---|---|---|
 | `POST` | `/webhooks/jira` | Recebe eventos de transição do Jira |
 | `GET` | `/health` | Health check (database + redis) |
+| `GET` | `/ping` | Ping leve — retorna `{ status: "ok", version: "1.0.0" }` |
 
 ## Desenvolvimento Local
 
