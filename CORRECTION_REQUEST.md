@@ -1,40 +1,43 @@
-# Pedido de Correção — Iteração 1/3
+# Pedido de Correção — Iteração 2/3
 ## Problema detectado
-O CI está falhando (conclusion: 'failure') e ambos os arquivos-fonte do PR têm cobertura 0%, indicando que os testes não estão sendo executados corretamente.
+O CI continua falhando com cobertura 0% em `src/routes/ping.ts` e `src/index.ts`. O problema raiz é que `src/index.ts` possui imports estáticos no topo do arquivo que carregam módulos com side-effects imediatos (conexões reais a banco de dados, Redis, BullMQ), fazendo com que qualquer teste falhe ao tentar importar qualquer módulo que transite por `src/index.ts`.
 
-**Arquivos afetados:**
-- `src/routes/ping.ts` → 0% em todas as métricas (statements, branches, functions, lines)
-- `src/index.ts` → 0% em todas as métricas
+**Causa raiz identificada:**
+`src/index.ts` ainda importa no topo:
+- `import jiraWebhookRouter from './webhooks/jira'` — provavelmente instancia conexões
+- `import { createOrchestratorWorker, createReconciler } from './orchestrator'` — conecta ao Redis/BullMQ
+- `import { createPoAgentWorker } from './agents/po'` — idem
+- `import { createLtAgentWorker } from './agents/lt'` — idem
+- `import { createDevAgentWorker } from './agents/dev-agent'` — idem
+- `import { createQaAgentWorker } from './agents/qa-agent'` — idem
+- `import { db, schema } from './db/index'` — instancia pool de banco de dados
+- `import { getAvgDurationByAgent, ... } from './lib/metrics'` — usa db
 
-**Possíveis causas a investigar e corrigir:**
-
-1. **`src/index.ts`**: Este arquivo importa diretamente `pg`, `ioredis`, `bullmq`, workers, orchestrators, e faz conexões reais ao banco/Redis ao ser carregado. Isso provavelmente faz o CI falhar por ausência de variáveis de ambiente (DATABASE_URL, REDIS_URL) ou por tentativas de conexão que dão timeout. O arquivo precisa ser refatorado para que as conexões e inicializações sejam feitas em uma função `bootstrap()` exportada separadamente, e o `app.listen()` seja chamado apenas quando `require.main === module` (ou `import.meta.url === ...`), permitindo que o módulo seja importado em testes sem efeitos colaterais.
-
-2. **`src/routes/ping.test.ts`**: Os testes de `ping.ts` estão bem escritos, mas o mock de `../lib/logger` pode não estar sendo aplicado corretamente antes do import do módulo. Verifique se `vi.mock('../lib/logger', ...)` está posicionado corretamente no topo do arquivo de teste (já parece estar, mas confirme).
-
-3. **Erros de compilação TypeScript**: Verifique se há erros de tipagem que impedem a execução dos testes.
+Esses imports no topo causam exceções ou timeouts em CI (onde DATABASE_URL e REDIS_URL não existem), abortando toda a suite de testes.
 
 **O que o DEV deve fazer:**
-- Inspecionar os logs de erro do CI para identificar exatamente qual teste/arquivo está causando a falha
-- Refatorar `src/index.ts` para separar a configuração do app Express da inicialização das conexões externas (DB, Redis, BullMQ workers), garantindo que o módulo possa ser importado sem side-effects em ambiente de teste
-- Garantir que `src/routes/ping.ts` e seu teste passem com 100% de cobertura após a correção
-- Garantir que os mocks de todas as dependências externas em `src/index.ts` estejam configurados no vitest.config.ts ou nos arquivos de setup de teste
+1. Mover TODOS esses imports problemáticos para DENTRO da função `bootstrap()` (imports dinâmicos com `await import(...)` ou imports estáticos movidos para dentro do escopo da função)
+2. O topo de `src/index.ts` deve ter APENAS imports que não causam side-effects: `express`, `dotenv`, `dns`, `./routes/ping`, `./lib/logger`
+3. Os imports de workers, orchestrator, db, redis, pg devem ser lazy (dentro de bootstrap)
+4. Garantir que `src/routes/ping.ts` exporta o router corretamente e que `ping.test.ts` passa com 100% de cobertura
+5. O arquivo `src/index.ts` precisa de um arquivo de teste `src/index.test.ts` mockando todos os imports problemáticos via `vi.mock()` para que a cobertura passe de 0%
+
+**Testes que estão falhando:** todos os testes do arquivo `src/routes/ping.test.ts` — a cobertura de `ping.ts` está em 0% porque o runner aborta antes de executar os testes.
 ## Arquivos com problemas
 - `src/index.ts`
 - `src/routes/ping.ts`
-- `src/routes/ping.test.ts`
 ## Testes falhando
-- src/routes/ping.test.ts — todos os testes (cobertura 0%, CI falhou)
+- Todos os testes em src/routes/ping.test.ts (CI falhou, cobertura 0%)
 ## Cobertura insuficiente
 ```json
 {
-  "src/routes/ping.ts": {
+  "src/index.ts": {
     "statements": 0,
     "branches": 0,
     "functions": 0,
     "lines": 0
   },
-  "src/index.ts": {
+  "src/routes/ping.ts": {
     "statements": 0,
     "branches": 0,
     "functions": 0,
@@ -43,4 +46,4 @@ O CI está falhando (conclusion: 'failure') e ambos os arquivos-fonte do PR têm
 }
 ```
 ---
-_Gerado pelo Agente QA em 2026-05-28T12:25:01.553Z_
+_Gerado pelo Agente QA em 2026-05-28T12:33:40.408Z_
