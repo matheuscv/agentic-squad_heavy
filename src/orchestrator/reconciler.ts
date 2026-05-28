@@ -102,6 +102,7 @@ async function reconcile(): Promise<void> {
         'jira:transition',
         {
           jiraKey: story.jiraKey,
+          projectKey: story.jiraKey.split('-')[0]!,
           issueId: jiraIssue.id,
           summary: jiraIssue.fields.summary,
           fromStatus: story.jiraStatus,

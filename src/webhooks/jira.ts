@@ -137,6 +137,7 @@ router.post('/jira', async (req: Request, res: Response) => {
   // 7. Enfileira job no BullMQ (sanitiza o summary antes de persistir)
   const jobData: OrchestratorJobData = {
     jiraKey: issue.key,
+    projectKey: issue.key.split('-')[0]!,
     issueId: issue.id,
     summary: sanitizeForLlm(issue.fields.summary),
     fromStatus,

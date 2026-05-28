@@ -20,10 +20,10 @@ const log = childLogger({ module: 'orchestrator' });
 // ─── Processador do job ───────────────────────────────────────────────────────
 
 async function processJob(job: Job<OrchestratorJobData>) {
-  const { jiraKey, fromStatus, toStatus, summary } = job.data;
+  const { jiraKey, projectKey, fromStatus, toStatus, summary } = job.data;
   const t0 = Date.now();
 
-  log.info({ jiraKey, from: fromStatus, to: toStatus }, 'processando transição');
+  log.info({ jiraKey, projectKey, from: fromStatus, to: toStatus }, 'processando transição');
 
   // 1. Idempotência — rejeita regressões ou movimentos sem progresso
   if (fromStatus && toStatus) {
@@ -153,37 +153,37 @@ async function dispatchAgent(
     case 'po':
       await poAgentQueue.add(
         'po:run',
-        { storyId, jiraKey, agentRunId, summary: jobData.summary, fromStatus: jobData.fromStatus },
+        { storyId, jiraKey, projectKey: jobData.projectKey, agentRunId, summary: jobData.summary, fromStatus: jobData.fromStatus },
         { jobId: `po-${jiraKey}-${agentRunId}` },
       );
-      log.info({ jiraKey, agentRunId, queue: 'agent-po' }, 'job enfileirado para agente PO');
+      log.info({ jiraKey, projectKey: jobData.projectKey, agentRunId, queue: 'agent-po' }, 'job enfileirado para agente PO');
       break;
 
     case 'lt':
       await ltAgentQueue.add(
         'lt:run',
-        { storyId, jiraKey, agentRunId, summary: jobData.summary, fromStatus: jobData.fromStatus },
+        { storyId, jiraKey, projectKey: jobData.projectKey, agentRunId, summary: jobData.summary, fromStatus: jobData.fromStatus },
         { jobId: `lt-${jiraKey}-${agentRunId}` },
       );
-      log.info({ jiraKey, agentRunId, queue: 'agent-lt' }, 'job enfileirado para agente LT');
+      log.info({ jiraKey, projectKey: jobData.projectKey, agentRunId, queue: 'agent-lt' }, 'job enfileirado para agente LT');
       break;
 
     case 'dev':
       await devAgentQueue.add(
         'dev:run',
-        { storyId, jiraKey, agentRunId, summary: jobData.summary, fromStatus: jobData.fromStatus },
+        { storyId, jiraKey, projectKey: jobData.projectKey, agentRunId, summary: jobData.summary, fromStatus: jobData.fromStatus },
         { jobId: `dev-${jiraKey}-${agentRunId}`, priority: DEV_JOB_PRIORITY.NORMAL },
       );
-      log.info({ jiraKey, agentRunId, queue: 'agent-dev' }, 'job enfileirado para agente DEV');
+      log.info({ jiraKey, projectKey: jobData.projectKey, agentRunId, queue: 'agent-dev' }, 'job enfileirado para agente DEV');
       break;
 
     case 'qa':
       await qaAgentQueue.add(
         'qa:run',
-        { storyId, jiraKey, agentRunId, summary: jobData.summary, fromStatus: jobData.fromStatus },
+        { storyId, jiraKey, projectKey: jobData.projectKey, agentRunId, summary: jobData.summary, fromStatus: jobData.fromStatus },
         { jobId: `qa-${jiraKey}-${agentRunId}` },
       );
-      log.info({ jiraKey, agentRunId, queue: 'agent-qa' }, 'job enfileirado para agente QA');
+      log.info({ jiraKey, projectKey: jobData.projectKey, agentRunId, queue: 'agent-qa' }, 'job enfileirado para agente QA');
       break;
 
     default:

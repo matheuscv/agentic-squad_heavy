@@ -59,6 +59,7 @@ export const stories = pgTable(
   {
     id: uuid('id').primaryKey().defaultRandom(),
     jiraKey: text('jira_key').notNull().unique(),
+    projectKey: text('project_key').notNull().default('SCRUM'),
     jiraSummary: text('jira_summary').notNull(),
     jiraDescription: text('jira_description'),
     status: storyStatusEnum('status').notNull().default('backlog'),
@@ -70,6 +71,7 @@ export const stories = pgTable(
   (t) => [
     index('stories_jira_key_idx').on(t.jiraKey),
     index('stories_status_idx').on(t.status),
+    index('stories_project_key_idx').on(t.projectKey),
   ],
 );
 

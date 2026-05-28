@@ -31,6 +31,7 @@ function extractMarkdownContent(raw: string): string {
 export type LtAgentJobData = {
   storyId: string;
   jiraKey: string;
+  projectKey: string;
   agentRunId: string;
   summary: string;
   fromStatus: string | null;
@@ -140,13 +141,13 @@ Lembre-se: responda APENAS com o markdown do plano, começando com "# Plano de E
 // ─── Processador do job LT ────────────────────────────────────────────────────
 
 async function processLtJob(job: Job<LtAgentJobData>): Promise<unknown> {
-  const { storyId, jiraKey, agentRunId, summary } = job.data;
+  const { storyId, jiraKey, projectKey, agentRunId, summary } = job.data;
   const startedAt = new Date();
   const model = process.env.ANTHROPIC_MODEL ?? 'claude-opus-4-7';
-  const jobLog = log.child({ jiraKey, agentRunId, storyId });
+  const jobLog = log.child({ jiraKey, projectKey, agentRunId, storyId });
   const phase = 'plan_generation';
 
-  logAgentStarted(jobLog, { storyId, jiraKey, agentRunId, agent: 'lt', phase });
+  logAgentStarted(jobLog, { storyId, jiraKey, projectKey, agentRunId, agent: 'lt', phase });
 
   // 1. Marca run como 'running'
   await db

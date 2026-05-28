@@ -20,6 +20,7 @@ const log = childLogger({ module: 'agent.po', agent: 'po' });
 export type PoAgentJobData = {
   storyId: string;
   jiraKey: string;
+  projectKey: string;
   agentRunId: string;
   summary: string;
   fromStatus: string | null;
@@ -172,13 +173,13 @@ Lembre-se: responda APENAS com o markdown do PRD, começando com "# PRD —".`,
 // ─── Processador do job PO ────────────────────────────────────────────────────
 
 async function processPoJob(job: Job<PoAgentJobData>): Promise<unknown> {
-  const { storyId, jiraKey, agentRunId, summary } = job.data;
+  const { storyId, jiraKey, projectKey, agentRunId, summary } = job.data;
   const startedAt = new Date();
   const model = process.env.ANTHROPIC_MODEL ?? 'claude-opus-4-7';
-  const jobLog = log.child({ jiraKey, agentRunId, storyId });
+  const jobLog = log.child({ jiraKey, projectKey, agentRunId, storyId });
   const phase = 'prd_generation';
 
-  logAgentStarted(jobLog, { storyId, jiraKey, agentRunId, agent: 'po', phase });
+  logAgentStarted(jobLog, { storyId, jiraKey, projectKey, agentRunId, agent: 'po', phase });
 
   // 1. Marca run como 'running'
   await db

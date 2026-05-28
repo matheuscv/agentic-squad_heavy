@@ -32,6 +32,7 @@ const log = childLogger({ module: 'agent.qa', agent: 'qa' });
 export type QaAgentJobData = {
   storyId: string;
   jiraKey: string;
+  projectKey: string;
   agentRunId: string;
   summary: string;
   fromStatus: string | null;
@@ -286,6 +287,7 @@ async function runQaAgent(
   summary: string,
   agentRunId: string,
   storyId: string,
+  projectKey: string,
   signal?: AbortSignal,
 ): Promise<QaAgentResult & { inputTokens: number; outputTokens: number }> {
   const devBranch = `agent/task-${jiraKey.toLowerCase()}`;
@@ -471,6 +473,7 @@ async function runQaAgent(
           {
             storyId,
             jiraKey,
+            projectKey,
             agentRunId: correctionRunId,
             summary,
             fromStatus: 'Em QA',
@@ -606,13 +609,13 @@ async function runQaAgent(
 // ─── Processador do job QA ────────────────────────────────────────────────────
 
 async function processQaJob(job: Job<QaAgentJobData>): Promise<unknown> {
-  const { storyId, jiraKey, agentRunId, summary } = job.data;
+  const { storyId, jiraKey, projectKey, agentRunId, summary } = job.data;
   const startedAt = new Date();
   const model = process.env.ANTHROPIC_MODEL ?? 'claude-opus-4-7';
-  const jobLog = log.child({ jiraKey, agentRunId, storyId });
+  const jobLog = log.child({ jiraKey, projectKey, agentRunId, storyId });
   const phase = 'qa_review';
 
-  logAgentStarted(jobLog, { storyId, jiraKey, agentRunId, agent: 'qa', phase });
+  logAgentStarted(jobLog, { storyId, jiraKey, projectKey, agentRunId, agent: 'qa', phase });
 
   await db
     .update(schema.agentRuns)
@@ -623,7 +626,7 @@ async function processQaJob(job: Job<QaAgentJobData>): Promise<unknown> {
     // Timeout de 10 min para o loop Claude do QA (lockDuration separado cobre o ciclo DEV+QA completo)
     const agentTimeoutMs = Number(process.env.QA_AGENT_TIMEOUT_MS ?? 600_000);
     const signal = AbortSignal.timeout(agentTimeoutMs);
-    const qaResult = await runQaAgent(jiraKey, summary, agentRunId, storyId, signal);
+    const qaResult = await runQaAgent(jiraKey, summary, agentRunId, storyId, projectKey, signal);
 
     // Salva relatório de testes
     await db.insert(schema.artifacts).values({

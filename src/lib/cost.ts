@@ -29,6 +29,7 @@ export async function checkAndAlertIfOverBudget(
   storyId: string,
   jiraKey: string,
   log: { warn: (obj: object, msg?: string) => void },
+  projectKey?: string,
 ): Promise<void> {
   const threshold = getCostAlertThresholdUsd();
 
@@ -40,13 +41,14 @@ export async function checkAndAlertIfOverBudget(
   const totalCost = Number(row?.totalCost ?? 0);
 
   if (totalCost > threshold) {
-    log.warn({ jiraKey, totalCost, threshold, event: 'cost_threshold_exceeded' }, 'custo da história excedeu o threshold');
+    log.warn({ jiraKey, projectKey, totalCost, threshold, event: 'cost_threshold_exceeded' }, 'custo da história excedeu o threshold');
 
     void sendBetterstackAlert({
       level: 'warn',
       event: 'cost_threshold_exceeded',
       message: `[${jiraKey}] custo acumulado USD ${totalCost.toFixed(4)} excede threshold USD ${threshold.toFixed(2)}`,
       jiraKey,
+      projectKey,
       storyId,
       totalCostUsd: totalCost,
       thresholdUsd: threshold,

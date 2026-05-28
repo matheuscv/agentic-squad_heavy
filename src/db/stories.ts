@@ -25,7 +25,7 @@ function resolveDbStatus(jiraStatusName: string) {
  * Chamada pelo Orchestrator Worker a cada evento Jira recebido.
  */
 export async function upsertStory(data: OrchestratorJobData) {
-  const { jiraKey, summary, toStatus, currentStatus } = data;
+  const { jiraKey, projectKey, summary, toStatus, currentStatus } = data;
   const effectiveStatus = toStatus ?? currentStatus;
   const dbStatus = resolveDbStatus(effectiveStatus);
 
@@ -37,6 +37,7 @@ export async function upsertStory(data: OrchestratorJobData) {
     .insert(schema.stories)
     .values({
       jiraKey,
+      projectKey,
       jiraSummary: summary,
       status: dbStatus,
       jiraStatus: effectiveStatus,

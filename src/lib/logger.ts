@@ -29,6 +29,7 @@ export function childLogger(ctx: Record<string, unknown>) {
 export interface AgentEventFields {
   storyId: string;
   jiraKey: string;
+  projectKey?: string;
   agentRunId: string;
   agent: string;
   phase: string;

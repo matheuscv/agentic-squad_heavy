@@ -1,0 +1,33 @@
+# Código-fonte TypeScript (publicamos apenas o dist/ compilado)
+src/
+
+# Testes e coverage
+coverage/
+*.test.ts
+*.spec.ts
+vitest.config.ts
+
+# Configuração de dev
+.env
+.env.*
+eslint.config.js
+tsconfig.eslint.json
+drizzle.config.ts
+
+# Ferramentas de CI/Deploy
+.github/
+render.yaml
+Dockerfile
+docker-compose*.yml
+
+# Artefatos temporários
+dist/
+*.tsbuildinfo
+nul
+
+# Documentação interna
+docs/
+key/
+
+# Logs
+*.log

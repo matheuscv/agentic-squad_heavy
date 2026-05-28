@@ -48,6 +48,7 @@ export type DlqJobData = {
 
 export type OrchestratorJobData = {
   jiraKey: string;
+  projectKey: string;
   issueId: string;
   summary: string;
   fromStatus: string | null;

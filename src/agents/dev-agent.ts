@@ -32,6 +32,7 @@ export type DevJobPriority = typeof DEV_JOB_PRIORITY[keyof typeof DEV_JOB_PRIORI
 export type DevAgentJobData = {
   storyId: string;
   jiraKey: string;
+  projectKey: string;
   agentRunId: string;
   summary: string;
   fromStatus: string | null;
@@ -297,13 +298,13 @@ Lembre-se:
 // ─── Processador do job DEV ───────────────────────────────────────────────────
 
 async function processDevJob(job: Job<DevAgentJobData>): Promise<unknown> {
-  const { storyId, jiraKey, agentRunId, summary, correctionMode, correctionIteration } = job.data;
+  const { storyId, jiraKey, projectKey, agentRunId, summary, correctionMode, correctionIteration } = job.data;
   const startedAt = new Date();
   const model = process.env.ANTHROPIC_MODEL ?? 'claude-opus-4-7';
-  const jobLog = log.child({ jiraKey, agentRunId, storyId, correctionMode });
+  const jobLog = log.child({ jiraKey, projectKey, agentRunId, storyId, correctionMode });
   const phase = correctionMode ? 'dev_correction' : 'development';
 
-  logAgentStarted(jobLog, { storyId, jiraKey, agentRunId, agent: 'dev', phase });
+  logAgentStarted(jobLog, { storyId, jiraKey, projectKey, agentRunId, agent: 'dev', phase });
 
   // 1. Marca run como 'running'
   await db
