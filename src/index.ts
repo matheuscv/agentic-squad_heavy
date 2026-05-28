@@ -1,17 +1,12 @@
 import { config } from 'dotenv';
-config();
-
-// Render free tier não suporta IPv6 de saída — força resolução DNS para IPv4
 import { setDefaultResultOrder } from 'dns';
-setDefaultResultOrder('ipv4first');
-
 import express, { type Request, type Response } from 'express';
 import pingRouter from './routes/ping';
 import { logger } from './lib/logger';
 
 // ─── Configuração do app Express (sem side-effects de I/O) ────────────────────
 
-const app = express();
+export const app = express();
 
 app.use(express.json());
 
@@ -27,6 +22,11 @@ app.get('/health', (_req: Request, res: Response): void => {
 // ─── bootstrap — toda I/O real acontece aqui, nunca no nível do módulo ────────
 
 export async function bootstrap(): Promise<void> {
+  // Render free tier não suporta IPv6 de saída — força resolução DNS para IPv4
+  // Movido para dentro de bootstrap() para evitar side-effects no import em testes
+  config();
+  setDefaultResultOrder('ipv4first');
+
   const port = Number(process.env.PORT ?? 3000);
 
   // ── Imports lazy (side-effects: conexões reais a banco, Redis, BullMQ) ──────
@@ -277,5 +277,3 @@ const isMain =
 if (isMain) {
   void bootstrap();
 }
-
-export { app };
