@@ -11,6 +11,7 @@ import IORedis from 'ioredis';
 import { sql, eq } from 'drizzle-orm';
 import { getAvgDurationByAgent, getSuccessRateByAgent, getCorrectionLoopsByStory } from './lib/metrics';
 import jiraWebhookRouter from './webhooks/jira';
+import pingRouter from './routes/ping';
 import { createOrchestratorWorker, createReconciler } from './orchestrator';
 import { createPoAgentWorker } from './agents/po';
 import { createLtAgentWorker } from './agents/lt';
@@ -23,6 +24,11 @@ const app = express();
 const port = Number(process.env.PORT ?? 3000);
 
 app.use(express.json());
+
+// ─── Rotas ────────────────────────────────────────────────────────────────────
+
+app.use('/ping', pingRouter); // liveness probe — sem dependências externas
+app.use('/webhooks', jiraWebhookRouter);
 
 // ─── Conexões ─────────────────────────────────────────────────────────────────
 
@@ -47,10 +53,6 @@ const redis = new IORedis(redisUrl, {
 redis.on('error', (err: Error) => {
   logger.error({ err: err.message }, 'erro de conexão Redis');
 });
-
-// ─── Rotas ────────────────────────────────────────────────────────────────────
-
-app.use('/webhooks', jiraWebhookRouter);
 
 app.get('/health', async (_req: Request, res: Response) => {
   const checks: Record<string, 'ok' | 'error'> = {};
