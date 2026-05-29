@@ -439,28 +439,131 @@ async function main(): Promise<void> {
   collected['AGENTS_DEV_CONCURRENCY']   = devConcurrency || '5';
   collected['COST_ALERT_THRESHOLD_USD'] = costAlert || '1.00';
 
-  // ── Step 8: URL do serviço ────────────────────────────────────────────────
+  // ── Step 8: Render — URL + variáveis de ambiente ─────────────────────────
 
-  step(8, TOTAL_STEPS, 'URL do serviço (onde o agentic-squad está hospedado)');
+  step(8, TOTAL_STEPS, 'Render — URL do serviço e variáveis de ambiente');
+
+  info('Configure o Web Service no Render (https://render.com) antes de continuar.');
+  info('Todas as variáveis abaixo deverão ser adicionadas em:');
+  info('  Render → seu serviço → Environment → Add Environment Variable');
+  print('');
 
   const serviceUrl = await ask('SERVICE_URL', existing['SERVICE_URL'] ?? 'https://agentic-squad.onrender.com');
   const nodeEnv    = await ask('NODE_ENV', existing['NODE_ENV'] ?? 'production');
   const port       = await ask('PORT',     existing['PORT'] ?? '3000');
   const webhookUrl = `${serviceUrl.replace(/\/$/, '')}/webhooks/jira?secret=${webhookSecret}`;
 
+  collected['SERVICE_URL'] = serviceUrl;
+  collected['NODE_ENV']    = nodeEnv;
+  collected['PORT']        = port;
+
+  // ── Revisão e coleta das variáveis do Render ──────────────────────────────
+  //
+  // Lista exata que o Render precisa — na mesma ordem usada no dashboard.
+  // Variáveis já coletadas em steps anteriores são pré-preenchidas;
+  // as ausentes são solicitadas agora.
+
+  const RENDER_VARS: string[] = [
+    'ANTHROPIC_API_KEY',
+    'CI_COVERAGE_COMMAND',
+    'CI_COVERAGE_THRESHOLD',
+    'CI_TEST_COMMAND',
+    'DATABASE_URL',
+    'GITHUB_APP_ID',
+    'GITHUB_APP_INSTALLATION_ID',
+    'GITHUB_APP_PRIVATE_KEY',
+    'GITHUB_DEFAULT_BRANCH',
+    'GITHUB_OWNER',
+    'GITHUB_REPO',
+    'JIRA_API_TOKEN',
+    'JIRA_BASE_URL',
+    'JIRA_EMAIL',
+    'JIRA_PROJECT_KEY',
+    'JIRA_WEBHOOK_SECRET',
+    'MODEL_DEV',
+    'MODEL_LT',
+    'MODEL_ORCHESTRATOR',
+    'MODEL_PO',
+    'MODEL_QA',
+    'REDIS_URL',
+    'SERVICE_URL',
+    'SUPABASE_ANON_KEY',
+    'SUPABASE_SERVICE_ROLE_KEY',
+    'SUPABASE_URL',
+  ];
+
+  // Chaves sensíveis — serão mascaradas no display
+  const SENSITIVE = new Set([
+    'ANTHROPIC_API_KEY', 'JIRA_API_TOKEN', 'JIRA_WEBHOOK_SECRET',
+    'GITHUB_APP_PRIVATE_KEY', 'DATABASE_URL', 'REDIS_URL',
+    'SUPABASE_ANON_KEY', 'SUPABASE_SERVICE_ROLE_KEY',
+  ]);
+
+  const mask = (key: string, val: string): string =>
+    SENSITIVE.has(key) && val.length > 8
+      ? `${val.slice(0, 6)}${'*'.repeat(6)}` : val;
+
+  print('');
+  print('  ┌─────────────────────────────────────────────────────────────┐');
+  print('  │  Revisão das variáveis de ambiente do Render                │');
+  print('  └─────────────────────────────────────────────────────────────┘');
+  print('');
+
+  const renderVars: Record<string, string> = {};
+  let missing = 0;
+
+  for (const key of RENDER_VARS) {
+    const current = collected[key] ?? existing[key] ?? '';
+
+    if (current) {
+      // já coletada — confirma sem perguntar
+      renderVars[key] = current;
+      info(`✓  ${key.padEnd(34)} ${mask(key, current)}`);
+    } else {
+      // ausente — solicita agora
+      print('');
+      warn(`   ${key} — não foi informada nos steps anteriores`);
+      const val = await ask(`   ${key}`, '');
+      if (val) {
+        renderVars[key] = val;
+        collected[key]  = val;
+        ok(`${key} definida`);
+      } else {
+        renderVars[key] = '';
+        fail(`${key} ficou vazia — adicione manualmente no painel do Render`);
+        missing++;
+      }
+    }
+  }
+
+  print('');
+  if (missing > 0) {
+    warn(`${missing} variável(is) ficaram vazias — complete no painel do Render antes do deploy.`);
+  } else {
+    ok('Todas as variáveis do Render estão preenchidas');
+  }
+
+  // Grava .env.render — bloco pronto para copiar/colar no Render
+  const renderEnvPath = resolve(process.cwd(), '.env.render');
+  const renderLines   = RENDER_VARS.map((k) => `${k}=${renderVars[k] ?? ''}`);
+  writeFileSync(renderEnvPath, renderLines.join('\n') + '\n', 'utf-8');
+
+  print('');
+  ok(`.env.render gravado em ${renderEnvPath}`);
+  info('Cole o conteúdo deste arquivo no Render → Environment → Add Environment Variable');
+  info('(ou use o Render CLI: render env set --service <id> < .env.render)');
+  print('');
+
+  // Health check — feito após coleta para não bloquear o fluxo
   info('Verificando saúde do serviço...');
   const health = await checkServiceHealth(serviceUrl);
 
   if (!health.ok) {
     warn(`Serviço não respondeu — ${health.detail ?? 'timeout'}`);
-    warn('O smoke test será pulado. Valide o deploy antes de testar.');
+    warn('Faça o deploy com as variáveis configuradas e execute novamente para o smoke test.');
   } else {
     ok(`Serviço respondeu: status=${health.status}`);
   }
-
-  collected['SERVICE_URL'] = serviceUrl;
-  collected['NODE_ENV']    = nodeEnv;
-  collected['PORT']        = port;
 
   // ── Step 9: Instalar workflow de CI ───────────────────────────────────────
 
