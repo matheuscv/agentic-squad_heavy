@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { Queue, Worker, type Job } from 'bullmq';
-import { eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { db, schema } from '../db/index';
 import { updateStoryStatus } from '../db/stories';
 import { redisConnection, agentDlqQueue } from '../queue/index';
@@ -39,6 +39,9 @@ export type DevAgentJobData = {
   correctionMode?: boolean;     // true quando invocado pelo Agente QA para corrigir falhas
   correctionIteration?: number; // ciclo de correção (1–3)
   priority?: DevJobPriority;    // prioridade na fila (padrão: NORMAL)
+  taskIndex?: number;           // índice da onda (1-based); undefined = modo single-DEV
+  totalTasks?: number;          // total de ondas despachadas em paralelo
+  taskScope?: string;           // tasks desta onda (ex: "TASK-01, TASK-02")
 };
 
 type DevAgentResult = {
@@ -162,6 +165,9 @@ async function runDevAgent(
   correctionMode: boolean = false,
   correctionIteration: number = 1,
   signal?: AbortSignal,
+  taskIndex: number = 1,
+  totalTasks: number = 1,
+  taskScope?: string,
 ): Promise<DevAgentResult & { inputTokens: number; outputTokens: number }> {
   const jobLog = log.child({ jiraKey, agentRunId, devBranch, correctionMode });
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -175,6 +181,8 @@ async function runDevAgent(
   const filesWritten: string[] = [];
   const stagedFiles = new Map<string, string>(); // path → content
   let prResult: PullRequestResult | null = null;
+
+  const isParallelWave = totalTasks > 1 && !!taskScope;
 
   const initialMessage = correctionMode
     ? `Data atual: ${today}
@@ -190,6 +198,22 @@ Siga estas etapas:
 3. Implemente as correções nos arquivos listados
 4. Crie os commits com create_github_commit
 5. NÃO chame create_pull_request — o PR já existe e será reutilizado`
+    : isParallelWave
+    ? `Data atual: ${today}
+História: ${jiraKey} — "${summary}"
+Branch do plano: ${prdBranch}
+Branch de desenvolvimento: ${devBranch} (já criado, baseado em master)
+Onda: ${taskIndex}/${totalTasks} — tasks desta onda: ${taskScope}
+
+Você é responsável por implementar APENAS as tasks da Onda ${taskIndex}: ${taskScope}.
+NÃO implemente tasks de outras ondas — elas estão sendo implementadas por outros agentes em paralelo.
+
+Siga estas etapas:
+1. Leia o PLANO_DE_EXECUCAO.md em "${jiraKey}/PLANO_DE_EXECUCAO.md" no branch "${prdBranch}"
+2. Identifique as tasks ${taskScope} — implemente SOMENTE estas tasks
+3. Leia APENAS os arquivos nomeados nessas tasks antes de escrevê-los
+4. Escreva testes unitários para cada task implementada
+5. Finalize obrigatoriamente com create_pull_request`
     : `Data atual: ${today}
 História: ${jiraKey} — "${summary}"
 Branch do plano: ${prdBranch}
@@ -298,10 +322,11 @@ Lembre-se:
 // ─── Processador do job DEV ───────────────────────────────────────────────────
 
 async function processDevJob(job: Job<DevAgentJobData>): Promise<unknown> {
-  const { storyId, jiraKey, projectKey, agentRunId, summary, correctionMode, correctionIteration } = job.data;
+  const { storyId, jiraKey, projectKey, agentRunId, summary, correctionMode, correctionIteration,
+          taskIndex = 1, totalTasks = 1, taskScope } = job.data;
   const startedAt = new Date();
   const model = process.env.ANTHROPIC_MODEL ?? 'claude-opus-4-7';
-  const jobLog = log.child({ jiraKey, projectKey, agentRunId, storyId, correctionMode });
+  const jobLog = log.child({ jiraKey, projectKey, agentRunId, storyId, correctionMode, taskIndex, totalTasks });
   const phase = correctionMode ? 'dev_correction' : 'development';
 
   logAgentStarted(jobLog, { storyId, jiraKey, projectKey, agentRunId, agent: 'dev', phase });
@@ -314,7 +339,10 @@ async function processDevJob(job: Job<DevAgentJobData>): Promise<unknown> {
 
   try {
     // 2. Cria (ou reutiliza) branch de desenvolvimento
-    const devBranch = `agent/task-${jiraKey.toLowerCase()}`;
+    // Em modo paralelo cada onda recebe branch próprio para evitar conflitos de commit.
+    const devBranch = totalTasks > 1
+      ? `agent/task-${jiraKey.toLowerCase()}-wave${taskIndex}`
+      : `agent/task-${jiraKey.toLowerCase()}`;
     await createBranch(devBranch); // idempotente: ignora 422 se branch já existe
     jobLog.debug({ devBranch }, 'branch verificado/criado');
 
@@ -325,6 +353,7 @@ async function processDevJob(job: Job<DevAgentJobData>): Promise<unknown> {
       jiraKey, summary, agentRunId, devBranch,
       correctionMode ?? false, correctionIteration ?? 1,
       signal,
+      taskIndex, totalTasks, taskScope,
     );
 
     jobLog.info(
@@ -364,34 +393,66 @@ async function processDevJob(job: Job<DevAgentJobData>): Promise<unknown> {
 
     jobLog.info({ artifactId: artifact!.id }, 'artifact code salvo no banco');
 
-    // 5. Move card para "Aguardando Aceite Dev"
+    // 5. Verifica se há outros DEV runs ainda ativos para esta story
+    const pendingDevRuns = await db
+      .select({ id: schema.agentRuns.id })
+      .from(schema.agentRuns)
+      .where(
+        and(
+          eq(schema.agentRuns.storyId, storyId),
+          eq(schema.agentRuns.agentType, 'dev'),
+          inArray(schema.agentRuns.status, ['pending', 'running']),
+        ),
+      )
+      .limit(1);
+
+    const isLastDev = pendingDevRuns.length === 0;
+    const waveLabel = totalTasks > 1 ? ` (Onda ${taskIndex}/${totalTasks})` : '';
+
+    // 6. Comenta no Jira com link para o PR desta onda
+    const prComment = totalTasks > 1
+      ? `🤖 *Agente DEV${waveLabel}* concluiu.\n\n` +
+        `📦 Pull Request: ${devResult.prHtmlUrl}\n` +
+        `📝 Arquivos: ${devResult.filesWritten.length}\n` +
+        `🌿 Branch: \`${devResult.branch}\``
+      : `🤖 *Agente DEV* concluiu a implementação.\n\n` +
+        `📦 Pull Request: ${devResult.prHtmlUrl}\n` +
+        `📝 Arquivos implementados: ${devResult.filesWritten.length}\n` +
+        `🌿 Branch: \`${devResult.branch}\`\n\n` +
+        `Aguardando revisão e aprovação do DEV humano (Gate 3/5).`;
+
     try {
-      await moveCardTo(jiraKey, 'Aguardando Aceite Dev');
-      jobLog.info({ to: 'Aguardando Aceite Dev' }, 'card movido no Jira');
-    } catch (err) {
-      jobLog.error({ err: (err as Error).message }, 'falha ao mover card — abortando');
-      throw err;
-    }
-
-    // 6. Sincroniza status no banco
-    await updateStoryStatus(jiraKey, 'Aguardando Aceite Dev', {
-      lastAgentType: 'dev',
-      lastAgentRunId: agentRunId,
-    });
-
-    // 7. Comenta no Jira com link para o PR
-    const comment =
-      `🤖 *Agente DEV* concluiu a implementação.\n\n` +
-      `📦 Pull Request: ${devResult.prHtmlUrl}\n` +
-      `📝 Arquivos implementados: ${devResult.filesWritten.length}\n` +
-      `🌿 Branch: \`${devResult.branch}\`\n\n` +
-      `Aguardando revisão e aprovação do DEV humano (Gate 3/5).`;
-
-    try {
-      await addComment(jiraKey, comment);
+      await addComment(jiraKey, prComment);
       jobLog.debug('comentário adicionado no Jira');
     } catch (err) {
       jobLog.warn({ err: (err as Error).message }, 'falha ao comentar — fluxo não interrompido');
+    }
+
+    // 7. Move card e sincroniza status apenas quando for o último DEV a concluir
+    if (isLastDev) {
+      try {
+        await moveCardTo(jiraKey, 'Aguardando Aceite Dev');
+        jobLog.info({ to: 'Aguardando Aceite Dev' }, 'card movido no Jira');
+      } catch (err) {
+        jobLog.error({ err: (err as Error).message }, 'falha ao mover card — abortando');
+        throw err;
+      }
+
+      await updateStoryStatus(jiraKey, 'Aguardando Aceite Dev', {
+        lastAgentType: 'dev',
+        lastAgentRunId: agentRunId,
+      });
+
+      if (totalTasks > 1) {
+        try {
+          await addComment(jiraKey,
+            `✅ Todas as ${totalTasks} ondas de desenvolvimento concluídas.\n\n` +
+            `Aguardando revisão e aprovação do DEV humano (Gate 3/5).`,
+          );
+        } catch (err) {
+          jobLog.warn({ err: (err as Error).message }, 'falha ao comentar gate — fluxo não interrompido');
+        }
+      }
     }
 
     // 8. Marca run como 'completed'

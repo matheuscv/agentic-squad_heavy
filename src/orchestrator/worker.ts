@@ -4,6 +4,7 @@ import { db, schema } from '../db/index';
 import { upsertStory } from '../db/stories';
 import { redisConnection, type OrchestratorJobData } from '../queue/index';
 import { moveCardTo } from '../jira/client';
+import { readFile } from '../github/client';
 import { poAgentQueue } from '../agents/po';
 import { ltAgentQueue } from '../agents/lt';
 import { devAgentQueue, DEV_JOB_PRIORITY } from '../agents/dev-agent';
@@ -16,6 +17,18 @@ import {
 } from './state-machine';
 
 const log = childLogger({ module: 'orchestrator' });
+
+// ─── Helper — parseia ondas do PLANO_DE_EXECUCAO.md ──────────────────────────
+// Formato esperado: "Onda N (paralelo): TASK-01, TASK-02"
+// Retorna array de tasks por onda (ex: ['TASK-01, TASK-02', 'TASK-03']), cap 5.
+// Array vazio = PLANO sem ondas → fallback para 1 DEV.
+function parsePlanWaves(content: string): string[] {
+  const matches = content.match(/^Onda\s+\d+[^:]*:\s*(.+)$/gim) ?? [];
+  return matches
+    .map(line => (line.match(/:\s*(.+)$/) ?? [])[1]?.trim() ?? '')
+    .filter(Boolean)
+    .slice(0, 5);
+}
 
 // ─── Processador do job ───────────────────────────────────────────────────────
 
@@ -102,6 +115,12 @@ async function dispatchAgent(
   jobData: OrchestratorJobData,
   moveTo?: JiraStatus,
 ) {
+  // DEV tem lógica própria: lê o PLANO e despacha 1 agente por onda (até 5)
+  if (agent === 'dev') {
+    await dispatchDevAgents(storyId, jiraKey, jobData, moveTo);
+    return;
+  }
+
   // 1. Move o card no Jira se a transição exigir (ex: "A Refinar" → "Em Refinamento")
   if (moveTo) {
     try {
@@ -168,15 +187,6 @@ async function dispatchAgent(
       log.info({ jiraKey, projectKey: jobData.projectKey, agentRunId, queue: 'agent-lt' }, 'job enfileirado para agente LT');
       break;
 
-    case 'dev':
-      await devAgentQueue.add(
-        'dev:run',
-        { storyId, jiraKey, projectKey: jobData.projectKey, agentRunId, summary: jobData.summary, fromStatus: jobData.fromStatus },
-        { jobId: `dev-${jiraKey}-${agentRunId}`, priority: DEV_JOB_PRIORITY.NORMAL },
-      );
-      log.info({ jiraKey, projectKey: jobData.projectKey, agentRunId, queue: 'agent-dev' }, 'job enfileirado para agente DEV');
-      break;
-
     case 'qa':
       await qaAgentQueue.add(
         'qa:run',
@@ -188,6 +198,99 @@ async function dispatchAgent(
 
     default:
       log.warn({ jiraKey, agent }, 'agente ainda não implementado');
+  }
+}
+
+// ─── Dispatch paralelo de agentes DEV (1 por onda do PLANO, até 5) ───────────
+
+async function dispatchDevAgents(
+  storyId: string,
+  jiraKey: string,
+  jobData: OrchestratorJobData,
+  moveTo?: JiraStatus,
+) {
+  // 1. Move o card no Jira
+  if (moveTo) {
+    try {
+      await moveCardTo(jiraKey, moveTo);
+      log.info({ jiraKey, moveTo }, 'card movido no Jira');
+    } catch (err) {
+      log.error({ jiraKey, moveTo, err: (err as Error).message }, 'falha ao mover card');
+      throw err;
+    }
+  }
+
+  // 2. Deduplicação — ignora se já existe qualquer run DEV ativo para esta story
+  const activeRuns = await db
+    .select({ id: schema.agentRuns.id })
+    .from(schema.agentRuns)
+    .where(
+      and(
+        eq(schema.agentRuns.storyId, storyId),
+        eq(schema.agentRuns.agentType, 'dev'),
+        inArray(schema.agentRuns.status, ['pending', 'running']),
+      ),
+    )
+    .limit(1);
+
+  if (activeRuns.length > 0) {
+    log.warn(
+      { jiraKey, existingRunId: activeRuns[0]!.id },
+      'agente DEV já ativo para esta story — enfileiramento ignorado',
+    );
+    return;
+  }
+
+  // 3. Lê PLANO_DE_EXECUCAO.md e parseia ondas; fallback para 1 DEV se não encontrar
+  const prdBranch = `prd/${jiraKey.toLowerCase()}`;
+  let waves: string[] = [];
+  try {
+    const planContent = await readFile(`${jiraKey}/PLANO_DE_EXECUCAO.md`, prdBranch);
+    if (planContent) waves = parsePlanWaves(planContent);
+  } catch (err) {
+    log.warn({ jiraKey, err: (err as Error).message }, 'falha ao ler PLANO — fallback para 1 DEV');
+  }
+
+  const totalTasks = Math.max(waves.length, 1);
+  log.info({ jiraKey, totalTasks, waves }, 'despachando agentes DEV em paralelo');
+
+  // 4. Cria 1 agentRun + 1 job por onda
+  for (let i = 0; i < totalTasks; i++) {
+    const taskIndex = i + 1;
+    const taskScope = waves[i]; // undefined quando sem ondas (totalTasks === 1)
+
+    const [agentRun] = await db
+      .insert(schema.agentRuns)
+      .values({
+        storyId,
+        agentType: 'dev',
+        status: 'pending',
+        input: { jiraKey, fromStatus: jobData.fromStatus, toStatus: jobData.toStatus, taskIndex, totalTasks, taskScope },
+      })
+      .returning({ id: schema.agentRuns.id });
+
+    const agentRunId = agentRun!.id;
+
+    await devAgentQueue.add(
+      'dev:run',
+      {
+        storyId,
+        jiraKey,
+        projectKey: jobData.projectKey,
+        agentRunId,
+        summary: jobData.summary,
+        fromStatus: jobData.fromStatus,
+        taskIndex,
+        totalTasks,
+        taskScope,
+      },
+      { jobId: `dev-${jiraKey}-${agentRunId}`, priority: DEV_JOB_PRIORITY.NORMAL },
+    );
+
+    log.info(
+      { jiraKey, agentRunId, taskIndex, totalTasks, taskScope, queue: 'agent-dev' },
+      'job enfileirado para agente DEV',
+    );
   }
 }
 

@@ -65,7 +65,7 @@ vi.mock('../../db/index', () => ({
   db: {
     update: vi.fn(() => ({ set: vi.fn(() => ({ where: mocks.dbUpdateWhere })) })),
     insert: vi.fn(() => ({ values: vi.fn(() => ({ returning: mocks.dbInsertReturning })) })),
-    select: vi.fn(() => ({ from: vi.fn(() => ({ where: vi.fn().mockResolvedValue([]) })) })),
+    select: vi.fn(() => ({ from: vi.fn(() => ({ where: vi.fn(() => Object.assign(Promise.resolve([]), { limit: vi.fn().mockResolvedValue([]) })) })) })),
   },
   schema: {
     agentRuns: { id: 'id', status: 'status', startedAt: 'started_at', completedAt: 'completed_at', output: 'output', durationMs: 'duration_ms', errorMessage: 'error_message' },
