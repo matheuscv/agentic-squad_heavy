@@ -1,0 +1,1301 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Guia de Configuração — Squad Agêntica in a Box</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:       #05091a;
+  --bg2:      #080e22;
+  --bg3:      #0b1530;
+  --card:     rgba(11,21,48,0.9);
+  --card2:    rgba(15,28,60,0.7);
+  --border:   rgba(255,255,255,0.07);
+  --border2:  rgba(255,255,255,0.13);
+  --blue:     #3b82f6;
+  --blue2:    #60a5fa;
+  --cyan:     #22d3ee;
+  --purple:   #a78bfa;
+  --green:    #34d399;
+  --amber:    #fbbf24;
+  --rose:     #f87171;
+  --orange:   #fb923c;
+  --teal:     #2dd4bf;
+  --text:     #e2e8f0;
+  --text2:    #94a3b8;
+  --text3:    #475569;
+  --text4:    #334155;
+}
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  font-family:'Inter',-apple-system,sans-serif;
+  background:var(--bg); color:var(--text);
+  min-height:100vh; overflow-x:hidden;
+  line-height:1.6;
+}
+
+/* ── BG GLOW ── */
+body::before{
+  content:''; position:fixed; inset:0; pointer-events:none; z-index:0;
+  background:
+    radial-gradient(ellipse 80% 50% at 50% -10%, rgba(59,130,246,.14) 0%, transparent 60%),
+    radial-gradient(ellipse 50% 40% at 90% 95%,  rgba(167,139,250,.08) 0%, transparent 55%),
+    radial-gradient(ellipse 50% 40% at 10% 85%,  rgba(34,211,238,.07)  0%, transparent 55%);
+}
+
+/* ── SCROLLBAR ── */
+::-webkit-scrollbar{width:6px}
+::-webkit-scrollbar-track{background:var(--bg2)}
+::-webkit-scrollbar-thumb{background:var(--text4);border-radius:3px}
+
+/* ── HERO ── */
+.hero{
+  position:relative; z-index:1;
+  padding:72px 80px 64px;
+  border-bottom:1px solid var(--border);
+  display:flex; align-items:flex-start; gap:60px;
+}
+.hero-left{flex:1}
+.hero-badge{
+  display:inline-flex; align-items:center; gap:8px;
+  background:rgba(59,130,246,.1); border:1px solid rgba(59,130,246,.25);
+  color:var(--blue2); padding:5px 14px; border-radius:20px;
+  font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase;
+  margin-bottom:24px;
+}
+.badge-pulse{
+  width:7px; height:7px; background:var(--blue); border-radius:50%;
+  animation:pulse 2s ease-in-out infinite;
+}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(.6)}}
+
+h1{
+  font-family:'Space Grotesk',sans-serif;
+  font-size:46px; font-weight:800; line-height:1.1; margin-bottom:18px;
+  background:linear-gradient(135deg,#e2e8f0 0%,#94a3b8 45%,#60a5fa 100%);
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;
+}
+.hero-sub{
+  font-size:17px; color:var(--text2); line-height:1.7; max-width:600px; margin-bottom:32px;
+}
+.hero-pills{display:flex;flex-wrap:wrap;gap:8px}
+.pill{
+  font-size:11px; font-weight:600; padding:4px 12px; border-radius:20px;
+  border:1px solid var(--border2); color:var(--text3);
+  text-transform:uppercase; letter-spacing:.05em;
+}
+
+/* Hero visual — animated pipeline */
+.hero-visual{
+  flex-shrink:0; width:380px;
+  background:var(--card); border:1px solid var(--border);
+  border-radius:20px; padding:24px; position:relative; overflow:hidden;
+}
+.hero-visual::before{
+  content:''; position:absolute; top:0; left:0; right:0; height:2px;
+  background:linear-gradient(90deg,var(--blue),var(--cyan),var(--purple));
+  animation:shimmer 3s ease-in-out infinite;
+}
+@keyframes shimmer{0%,100%{opacity:.6}50%{opacity:1}}
+.pipeline-label{
+  font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.1em;
+  color:var(--text3); margin-bottom:16px;
+}
+.pipe-row{
+  display:flex; align-items:center; gap:6px; margin-bottom:8px;
+}
+.pipe-node{
+  display:flex; align-items:center; gap:8px;
+  background:rgba(255,255,255,.04); border:1px solid var(--border);
+  border-radius:8px; padding:7px 11px; flex:1;
+  font-size:12px; font-weight:600; color:var(--text2);
+  position:relative; overflow:hidden;
+}
+.pipe-node::before{
+  content:''; position:absolute; left:0; top:0; bottom:0; width:3px;
+  background:var(--nc, var(--blue));
+}
+.pipe-dot{
+  width:8px; height:8px; border-radius:50%;
+  background:var(--nc, var(--blue)); flex-shrink:0;
+  animation:blink 2s ease-in-out infinite;
+  animation-delay:var(--nd, 0s);
+}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
+.pipe-arrow{color:var(--text4);font-size:14px;flex-shrink:0}
+.pipe-gate{
+  font-size:10px; font-weight:700; color:var(--amber);
+  background:rgba(251,191,36,.1); border:1px solid rgba(251,191,36,.2);
+  padding:3px 8px; border-radius:4px; text-align:center; margin-top:4px;
+}
+
+/* ── NAV PILLS ── */
+.nav-bar{
+  position:sticky; top:0; z-index:100;
+  background:rgba(5,9,26,.92); backdrop-filter:blur(16px);
+  border-bottom:1px solid var(--border);
+  padding:12px 80px; display:flex; align-items:center; gap:6px; overflow-x:auto;
+}
+.nav-btn{
+  font-size:11.5px; font-weight:600; padding:6px 14px; border-radius:20px;
+  border:1px solid transparent; color:var(--text3); background:transparent;
+  cursor:pointer; white-space:nowrap; transition:all .2s;
+  text-decoration:none; display:inline-block;
+}
+.nav-btn:hover{color:var(--text2);border-color:var(--border2)}
+.nav-btn.active{color:var(--blue2);background:rgba(59,130,246,.1);border-color:rgba(59,130,246,.25)}
+
+/* ── CONTENT ── */
+.content{position:relative;z-index:1;padding:0 80px 80px}
+
+/* ── SECTION ── */
+.section{margin-top:64px}
+.section-hdr{display:flex;align-items:center;gap:12px;margin-bottom:32px}
+.section-bar{width:36px;height:3px;background:linear-gradient(90deg,var(--blue),var(--cyan));border-radius:2px;flex-shrink:0}
+.section-title{font-family:'Space Grotesk',sans-serif;font-size:22px;font-weight:700;color:var(--text)}
+.section-note{margin-left:auto;font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-weight:600;flex-shrink:0}
+
+/* ── PREREQ GRID ── */
+.prereq-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.prereq-card{
+  background:var(--card); border:1px solid var(--border); border-radius:14px;
+  padding:18px; position:relative; overflow:hidden;
+  transition:border-color .2s,transform .2s;
+}
+.prereq-card:hover{border-color:var(--border2);transform:translateY(-2px)}
+.prereq-card::before{
+  content:''; position:absolute; top:0; left:0; right:0; height:2px;
+  background:var(--pc,var(--blue));
+}
+.prereq-icon{font-size:22px;margin-bottom:10px}
+.prereq-name{font-size:13px;font-weight:700;color:var(--text);margin-bottom:5px;font-family:'Space Grotesk',sans-serif}
+.prereq-desc{font-size:11.5px;color:var(--text2);line-height:1.6;margin-bottom:10px}
+.prereq-link{font-size:10.5px;color:var(--blue2);font-weight:600}
+
+/* ── FLOW DIAGRAM ── */
+.flow-wrap{
+  background:var(--card); border:1px solid var(--border);
+  border-radius:20px; overflow:hidden; position:relative;
+}
+.flow-wrap::before{
+  content:''; position:absolute; inset:0; pointer-events:none;
+  background:
+    repeating-linear-gradient(0deg,transparent,transparent 39px,rgba(255,255,255,.016) 39px,rgba(255,255,255,.016) 40px),
+    repeating-linear-gradient(90deg,transparent,transparent 39px,rgba(255,255,255,.016) 39px,rgba(255,255,255,.016) 40px);
+}
+.flow-wrap svg{width:100%;height:auto;display:block}
+@keyframes flow{from{stroke-dashoffset:300}to{stroke-dashoffset:0}}
+@keyframes rflow{from{stroke-dashoffset:0}to{stroke-dashoffset:300}}
+.fa{animation:flow 3s linear infinite}
+.fb{animation:flow 4s linear infinite}
+.fc{animation:flow 5s linear infinite}
+.fd{animation:rflow 3.5s linear infinite}
+
+/* ── INSTALL BLOCK ── */
+.install-block{
+  background:var(--bg3); border:1px solid var(--border);
+  border-radius:16px; padding:28px 32px; margin-bottom:20px;
+}
+.install-title{
+  font-size:13px; font-weight:700; color:var(--text3);
+  text-transform:uppercase; letter-spacing:.08em; margin-bottom:16px;
+  display:flex; align-items:center; gap:8px;
+}
+.install-title::before{content:'';width:4px;height:4px;background:var(--blue);border-radius:50%}
+.terminal{
+  background:#010810; border:1px solid rgba(59,130,246,.15);
+  border-radius:10px; overflow:hidden;
+}
+.term-bar{
+  background:rgba(255,255,255,.04); padding:8px 14px;
+  display:flex; align-items:center; gap:7px;
+  border-bottom:1px solid rgba(255,255,255,.06);
+}
+.term-dot{width:10px;height:10px;border-radius:50%}
+.term-title{font-size:11px;color:var(--text4);margin-left:auto;font-family:'JetBrains Mono',monospace}
+.term-body{padding:16px 20px;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.8}
+.t-prompt{color:var(--text4)}
+.t-cmd{color:var(--cyan)}
+.t-comment{color:var(--text4)}
+.t-ok{color:var(--green)}
+.t-warn{color:var(--amber)}
+.t-err{color:var(--rose)}
+.t-val{color:var(--purple)}
+.t-dim{color:var(--text4)}
+
+/* ── STEPS ── */
+.steps-list{display:flex;flex-direction:column;gap:0}
+
+.step-item{
+  display:flex; gap:0; position:relative;
+}
+.step-item:not(:last-child) .step-spine::after{
+  content:''; position:absolute; left:50%; top:100%;
+  width:2px; height:100%; background:var(--border); transform:translateX(-50%);
+  z-index:0;
+}
+
+.step-spine{
+  width:80px; flex-shrink:0; display:flex; flex-direction:column; align-items:center;
+  padding-top:24px; position:relative;
+}
+.step-num{
+  width:44px; height:44px; border-radius:50%; position:relative; z-index:1;
+  display:flex; align-items:center; justify-content:center;
+  background:var(--sn-bg, var(--bg3)); border:2px solid var(--sn-c, var(--border2));
+  font-family:'Space Grotesk',sans-serif; font-size:15px; font-weight:800;
+  color:var(--sn-c, var(--text3));
+  box-shadow:0 0 0 4px rgba(0,0,0,.4);
+  transition:all .3s;
+}
+.step-item:hover .step-num{
+  background:var(--sn-bg-h, rgba(59,130,246,.15));
+  border-color:var(--sn-c-h, var(--blue));
+  color:var(--sn-c-h, var(--blue2));
+  box-shadow:0 0 20px var(--sn-glow, rgba(59,130,246,.25));
+}
+
+.step-body{
+  flex:1; padding:24px 0 40px 24px;
+}
+.step-header{
+  display:flex; align-items:flex-start; gap:14px; margin-bottom:20px;
+}
+.step-service-badge{
+  display:inline-flex; align-items:center; gap:6px;
+  padding:4px 12px; border-radius:20px; font-size:10.5px; font-weight:700;
+  text-transform:uppercase; letter-spacing:.06em; flex-shrink:0; margin-top:3px;
+  background:var(--sb-bg, rgba(59,130,246,.1));
+  border:1px solid var(--sb-b, rgba(59,130,246,.2));
+  color:var(--sb-c, var(--blue2));
+}
+.step-titles{flex:1}
+.step-title{
+  font-family:'Space Grotesk',sans-serif; font-size:19px; font-weight:700;
+  color:var(--text); margin-bottom:4px;
+}
+.step-tagline{font-size:13px;color:var(--text2)}
+
+.step-cols{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px}
+.step-box{
+  background:var(--card2); border:1px solid var(--border);
+  border-radius:12px; padding:16px 18px;
+}
+.step-box-title{
+  font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.1em;
+  color:var(--text4); margin-bottom:10px; display:flex; align-items:center; gap:6px;
+}
+.step-box-title::before{content:'';width:3px;height:3px;background:currentColor;border-radius:50%}
+.step-box p{font-size:12.5px;color:var(--text2);line-height:1.7}
+
+.vars-list{display:flex;flex-direction:column;gap:5px}
+.var-row{
+  display:flex; align-items:center; gap:10px;
+  background:rgba(255,255,255,.03); border:1px solid rgba(255,255,255,.05);
+  border-radius:7px; padding:6px 10px;
+}
+.var-key{
+  font-family:'JetBrains Mono',monospace; font-size:11.5px; font-weight:600;
+  color:var(--cyan); flex:1;
+}
+.var-req{
+  font-size:9.5px; font-weight:700; padding:2px 7px; border-radius:10px;
+  text-transform:uppercase; letter-spacing:.05em; flex-shrink:0;
+}
+.req-obrig{background:rgba(248,113,113,.12);border:1px solid rgba(248,113,113,.2);color:var(--rose)}
+.req-opcio{background:rgba(71,85,105,.3);border:1px solid rgba(71,85,105,.4);color:var(--text4)}
+.req-auto {background:rgba(52,211,153,.1);border:1px solid rgba(52,211,153,.2);color:var(--green)}
+.var-hint{font-size:10.5px;color:var(--text4);flex-shrink:0;max-width:160px;text-align:right}
+
+.action-tip{
+  display:flex; gap:10px; align-items:flex-start;
+  background:rgba(59,130,246,.06); border:1px solid rgba(59,130,246,.15);
+  border-radius:10px; padding:12px 14px; margin-top:12px;
+}
+.action-tip-icon{font-size:14px;flex-shrink:0;margin-top:1px}
+.action-tip p{font-size:12px;color:var(--text2);line-height:1.65}
+.action-tip a,.action-tip code{color:var(--blue2);font-family:'JetBrains Mono',monospace;font-size:11.5px}
+
+.warn-tip{
+  display:flex; gap:10px; align-items:flex-start;
+  background:rgba(251,191,36,.06); border:1px solid rgba(251,191,36,.18);
+  border-radius:10px; padding:12px 14px; margin-top:12px;
+}
+.warn-tip p{font-size:12px;color:#d4b44a;line-height:1.65}
+
+.step-divider{
+  border:none; border-top:1px solid var(--border);
+  margin:0 0 0 104px;
+}
+
+/* ── OUTPUT FILES ── */
+.output-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.output-card{
+  background:var(--card); border:1px solid var(--border); border-radius:16px;
+  overflow:hidden;
+}
+.output-head{
+  padding:16px 20px; border-bottom:1px solid var(--border);
+  display:flex; align-items:center; gap:12px;
+}
+.output-icon{
+  width:36px;height:36px;border-radius:9px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:16px;
+}
+.output-name{font-family:'Space Grotesk',sans-serif;font-size:14px;font-weight:700;color:var(--text)}
+.output-desc{font-size:11.5px;color:var(--text3);margin-top:2px}
+.output-body{padding:16px 20px}
+.output-body pre{
+  font-family:'JetBrains Mono',monospace; font-size:11.5px; color:var(--text2);
+  line-height:1.75; white-space:pre-wrap; word-break:break-all;
+}
+.env-comment{color:var(--text4)}
+.env-key{color:var(--cyan)}
+.env-val{color:var(--purple)}
+
+/* ── NEXT STEPS ── */
+.next-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.next-card{
+  background:var(--card); border:1px solid var(--border); border-radius:14px;
+  padding:20px; position:relative; overflow:hidden;
+}
+.next-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--nc,var(--blue))}
+.next-n{
+  font-family:'Space Grotesk',sans-serif; font-size:36px; font-weight:800;
+  color:rgba(255,255,255,.04); position:absolute; top:8px; right:14px;
+}
+.next-title{font-family:'Space Grotesk',sans-serif;font-size:14px;font-weight:700;color:var(--text);margin-bottom:8px}
+.next-desc{font-size:12px;color:var(--text2);line-height:1.65}
+
+/* ── FOOTER ── */
+.footer{
+  position:relative; z-index:1;
+  border-top:1px solid var(--border); padding:28px 80px;
+  display:flex; align-items:center; justify-content:space-between;
+}
+.footer-l{display:flex;align-items:center;gap:10px}
+.footer-logo{font-family:'Space Grotesk',sans-serif;font-size:13px;font-weight:700;color:var(--text2)}
+.footer-copy{font-size:12px;color:var(--text3)}
+.footer-r{display:flex;gap:12px}
+.footer-chip{
+  font-size:10px;font-weight:600;padding:4px 10px;border-radius:20px;
+  border:1px solid var(--border);color:var(--text3);text-transform:uppercase;letter-spacing:.06em;
+}
+
+/* ── UTILITIES ── */
+code{
+  font-family:'JetBrains Mono',monospace; font-size:12px;
+  background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.08);
+  padding:1px 6px; border-radius:4px; color:var(--cyan);
+}
+.mt-8{margin-top:8px}
+.mt-12{margin-top:12px}
+.mt-16{margin-top:16px}
+
+@media print{
+  body::before{display:none}
+  .nav-bar{display:none}
+  .hero,.content,.footer{padding-left:40px;padding-right:40px}
+  .prereq-grid{grid-template-columns:repeat(2,1fr)}
+  .step-cols{grid-template-columns:1fr}
+  .output-grid,.next-grid{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+
+<!-- ═══════════ HERO ═══════════ -->
+<header class="hero">
+  <div class="hero-left">
+    <div class="hero-badge"><span class="badge-pulse"></span>Squad Agêntica · Guia de Configuração · v2.0</div>
+    <h1>Squad in a Box<br>Configuração do Projeto Alvo</h1>
+    <p class="hero-sub">
+      Manual completo para conectar qualquer repositório à infraestrutura da Squad Agêntica.
+      Ao final do wizard <code>agentic-squad init</code>, seu projeto terá PRDs, planos de execução,
+      código e testes gerados automaticamente por IA — com gates humanos preservados.
+    </p>
+    <div class="hero-pills">
+      <span class="pill">11 Steps</span>
+      <span class="pill">~25 min</span>
+      <span class="pill">8 Serviços</span>
+      <span class="pill">Node.js ≥ 20</span>
+      <span class="pill">Claude Opus + Sonnet</span>
+    </div>
+  </div>
+
+  <!-- Animated pipeline -->
+  <div class="hero-visual">
+    <div class="pipeline-label">Fluxo de uma história — Backlog → PR</div>
+    <div class="pipe-row">
+      <div class="pipe-node" style="--nc:#0052CC"><span class="pipe-dot" style="--nc:#0052CC;--nd:0s"></span>Jira — Card movido</div>
+    </div>
+    <div class="pipe-row" style="padding-left:24px">
+      <div class="pipe-arrow">↓</div>
+      <div style="flex:1;font-size:10.5px;color:var(--text4);padding-left:6px">webhook HMAC-SHA256</div>
+    </div>
+    <div class="pipe-row">
+      <div class="pipe-node" style="--nc:#3b82f6"><span class="pipe-dot" style="--nc:#3b82f6;--nd:.3s"></span>Orchestrator · State Machine</div>
+    </div>
+    <div class="pipe-row" style="padding-left:16px;gap:8px">
+      <div class="pipe-node" style="--nc:#60a5fa;flex:.8"><span class="pipe-dot" style="--nc:#60a5fa;--nd:.6s"></span>PO → PRD.md</div>
+      <div class="pipe-node" style="--nc:#22d3ee;flex:.8"><span class="pipe-dot" style="--nc:#22d3ee;--nd:.9s"></span>LT → Plano</div>
+    </div>
+    <div class="pipe-gate">⚑ Gate Humano — aceite PRD / Plano</div>
+    <div class="pipe-row" style="margin-top:8px">
+      <div class="pipe-node" style="--nc:#34d399"><span class="pipe-dot" style="--nc:#34d399;--nd:1.2s"></span>DEV ×5 → Pull Request</div>
+    </div>
+    <div class="pipe-row">
+      <div class="pipe-node" style="--nc:#fbbf24"><span class="pipe-dot" style="--nc:#fbbf24;--nd:1.5s"></span>QA → cobertura ≥ 85%</div>
+    </div>
+    <div class="pipe-gate">⚑ Gate Humano — merge do PR</div>
+  </div>
+</header>
+
+<!-- ═══════════ NAV ═══════════ -->
+<nav class="nav-bar">
+  <a class="nav-btn active" href="#prereq">Pré-requisitos</a>
+  <a class="nav-btn" href="#fluxo">Fluxo Geral</a>
+  <a class="nav-btn" href="#install">Instalação</a>
+  <a class="nav-btn" href="#step1">Step 1 — Jira</a>
+  <a class="nav-btn" href="#step2">Step 2 — GitHub App</a>
+  <a class="nav-btn" href="#step3">Step 3 — Stack</a>
+  <a class="nav-btn" href="#step4">Step 4 — Supabase</a>
+  <a class="nav-btn" href="#step5">Step 5 — Redis</a>
+  <a class="nav-btn" href="#step6">Step 6 — Anthropic</a>
+  <a class="nav-btn" href="#step7">Step 7 — Betterstack</a>
+  <a class="nav-btn" href="#step8">Step 8 — Render</a>
+  <a class="nav-btn" href="#step9">Step 9 — CI</a>
+  <a class="nav-btn" href="#step10">Step 10 — Webhook</a>
+  <a class="nav-btn" href="#step11">Step 11 — Smoke Test</a>
+  <a class="nav-btn" href="#output">Resultados</a>
+  <a class="nav-btn" href="#proximos">Próximos Passos</a>
+</nav>
+
+<!-- ═══════════ CONTENT ═══════════ -->
+<div class="content">
+
+<!-- ── PRÉ-REQUISITOS ── -->
+<div class="section" id="prereq">
+  <div class="section-hdr">
+    <div class="section-bar"></div>
+    <h2 class="section-title">Pré-requisitos — O que você precisa ter antes de começar</h2>
+    <span class="section-note">8 serviços · Contas gratuitas disponíveis</span>
+  </div>
+  <div class="prereq-grid">
+    <div class="prereq-card" style="--pc:#0052CC">
+      <div class="prereq-icon">📋</div>
+      <div class="prereq-name">Jira Cloud</div>
+      <div class="prereq-desc">Conta Atlassian com um projeto criado. Você precisará de permissão de <strong>Jira Administrator</strong> para registrar webhooks.</div>
+      <div class="prereq-link">→ atlassian.com/software/jira</div>
+    </div>
+    <div class="prereq-card" style="--pc:#4b5563">
+      <div class="prereq-icon">🐙</div>
+      <div class="prereq-name">GitHub + GitHub App</div>
+      <div class="prereq-desc">Repositório do projeto alvo e um GitHub App criado com permissões de leitura/escrita em <em>Contents</em> e <em>Pull Requests</em>.</div>
+      <div class="prereq-link">→ github.com/settings/apps</div>
+    </div>
+    <div class="prereq-card" style="--pc:#3ecf8e">
+      <div class="prereq-icon">🗄️</div>
+      <div class="prereq-name">Supabase</div>
+      <div class="prereq-desc">Projeto criado no Supabase. Você precisará da <em>Connection String</em> (URI) do banco PostgreSQL.</div>
+      <div class="prereq-link">→ supabase.com</div>
+    </div>
+    <div class="prereq-card" style="--pc:#2dd4bf">
+      <div class="prereq-icon">⚡</div>
+      <div class="prereq-name">Upstash Redis</div>
+      <div class="prereq-desc">Database Redis criado no Upstash. Use o plano gratuito para começar. Copie a <em>Connection String</em> com prefixo <code>rediss://</code>.</div>
+      <div class="prereq-link">→ upstash.com</div>
+    </div>
+    <div class="prereq-card" style="--pc:#fb923c">
+      <div class="prereq-icon">🤖</div>
+      <div class="prereq-name">Anthropic API</div>
+      <div class="prereq-desc">Conta no Anthropic Console com créditos disponíveis. Gere uma API Key em <em>Settings → API Keys</em>.</div>
+      <div class="prereq-link">→ console.anthropic.com</div>
+    </div>
+    <div class="prereq-card" style="--pc:#46E3B7">
+      <div class="prereq-icon">🚀</div>
+      <div class="prereq-name">Render</div>
+      <div class="prereq-desc">Web Service criado no Render apontando para o repositório do <em>agentic-squad-heavy</em>. Gere uma API Key em <em>Account Settings</em>.</div>
+      <div class="prereq-link">→ render.com</div>
+    </div>
+    <div class="prereq-card" style="--pc:#fb923c">
+      <div class="prereq-icon">📊</div>
+      <div class="prereq-name">Betterstack (opcional)</div>
+      <div class="prereq-desc">Plataforma de observabilidade. Se configurado, todos os logs da squad chegam com contexto de <code>story_id</code>, <code>agent</code> e custo de tokens.</div>
+      <div class="prereq-link">→ betterstack.com (opcional)</div>
+    </div>
+    <div class="prereq-card" style="--pc:#7c3aed">
+      <div class="prereq-icon">💻</div>
+      <div class="prereq-name">Node.js ≥ 20 (local)</div>
+      <div class="prereq-desc">Para rodar o wizard <code>agentic-squad init</code> na sua máquina. O npm do pacote já inclui o CLI — não precisa clonar o repositório.</div>
+      <div class="prereq-link">→ nodejs.org</div>
+    </div>
+  </div>
+</div>
+
+<!-- ── FLUXO GERAL ── -->
+<div class="section" id="fluxo">
+  <div class="section-hdr">
+    <div class="section-bar"></div>
+    <h2 class="section-title">Fluxo Geral — Do Wizard ao Primeiro PR Gerado por IA</h2>
+    <span class="section-note">Visão ponta a ponta</span>
+  </div>
+  <div class="flow-wrap">
+    <svg viewBox="0 0 1300 420" xmlns="http://www.w3.org/2000/svg" style="min-height:320px">
+      <defs>
+        <marker id="a1" markerWidth="7" markerHeight="5" refX="5" refY="2.5" orient="auto"><polygon points="0 0,7 2.5,0 5" fill="#3b82f6" opacity=".85"/></marker>
+        <marker id="a2" markerWidth="7" markerHeight="5" refX="5" refY="2.5" orient="auto"><polygon points="0 0,7 2.5,0 5" fill="#34d399" opacity=".85"/></marker>
+        <marker id="a3" markerWidth="7" markerHeight="5" refX="5" refY="2.5" orient="auto"><polygon points="0 0,7 2.5,0 5" fill="#fbbf24" opacity=".85"/></marker>
+        <marker id="a4" markerWidth="7" markerHeight="5" refX="5" refY="2.5" orient="auto"><polygon points="0 0,7 2.5,0 5" fill="#a78bfa" opacity=".85"/></marker>
+        <filter id="glow"><feGaussianBlur stdDeviation="5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+      </defs>
+
+      <!-- Phase labels -->
+      <rect x="20"  y="18" width="200" height="22" rx="4" fill="rgba(59,130,246,.08)" stroke="rgba(59,130,246,.15)" stroke-width="1"/>
+      <text x="120" y="33" font-family="Inter,sans-serif" font-size="9.5" font-weight="700" fill="rgba(59,130,246,.6)" text-anchor="middle" letter-spacing="1.5">CONFIGURAÇÃO (WIZARD)</text>
+
+      <rect x="240" y="18" width="200" height="22" rx="4" fill="rgba(52,211,153,.06)" stroke="rgba(52,211,153,.12)" stroke-width="1"/>
+      <text x="340" y="33" font-family="Inter,sans-serif" font-size="9.5" font-weight="700" fill="rgba(52,211,153,.5)" text-anchor="middle" letter-spacing="1.5">TRIGGER</text>
+
+      <rect x="460" y="18" width="560" height="22" rx="4" fill="rgba(167,139,250,.06)" stroke="rgba(167,139,250,.1)" stroke-width="1"/>
+      <text x="740" y="33" font-family="Inter,sans-serif" font-size="9.5" font-weight="700" fill="rgba(167,139,250,.5)" text-anchor="middle" letter-spacing="1.5">EXECUÇÃO AUTÔNOMA DOS AGENTES</text>
+
+      <rect x="1040" y="18" width="240" height="22" rx="4" fill="rgba(251,191,36,.06)" stroke="rgba(251,191,36,.12)" stroke-width="1"/>
+      <text x="1160" y="33" font-family="Inter,sans-serif" font-size="9.5" font-weight="700" fill="rgba(251,191,36,.5)" text-anchor="middle" letter-spacing="1.5">GATES HUMANOS</text>
+
+      <!-- Nodes -->
+      <!-- 1: Wizard -->
+      <rect x="20" y="55" width="200" height="70" rx="12" fill="rgba(11,21,48,.9)" stroke="rgba(59,130,246,.45)" stroke-width="1.5"/>
+      <rect x="20" y="55" width="200" height="3" rx="1.5" fill="#3b82f6" opacity=".8"/>
+      <text x="120" y="84" font-family="'Space Grotesk',sans-serif" font-size="12" font-weight="700" fill="#e2e8f0" text-anchor="middle">agentic-squad init</text>
+      <text x="120" y="100" font-family="Inter,sans-serif" font-size="10.5" fill="#64748b" text-anchor="middle">Wizard — 11 Steps</text>
+      <text x="120" y="114" font-family="Inter,sans-serif" font-size="10" fill="#334155" text-anchor="middle">Configura todos os serviços</text>
+
+      <!-- Arrow 1→2 -->
+      <path d="M 222 90 L 238 90" stroke="#3b82f6" stroke-width="1.8" fill="none" stroke-dasharray="5 5" marker-end="url(#a1)" class="fa" opacity=".8"/>
+
+      <!-- 2: Jira move card -->
+      <rect x="240" y="55" width="200" height="70" rx="12" fill="rgba(11,21,48,.9)" stroke="rgba(0,82,204,.4)" stroke-width="1.5"/>
+      <rect x="240" y="55" width="200" height="3" rx="1.5" fill="#0052CC" opacity=".8"/>
+      <text x="340" y="84" font-family="'Space Grotesk',sans-serif" font-size="12" font-weight="700" fill="#e2e8f0" text-anchor="middle">Jira — Move Card</text>
+      <text x="340" y="100" font-family="Inter,sans-serif" font-size="10.5" fill="#64748b" text-anchor="middle">Backlog → A Refinar</text>
+      <text x="340" y="114" font-family="Inter,sans-serif" font-size="10" fill="#334155" text-anchor="middle">Webhook HMAC-SHA256</text>
+
+      <!-- Arrow 2→3 -->
+      <path d="M 442 90 L 458 90" stroke="#3b82f6" stroke-width="1.8" fill="none" stroke-dasharray="5 5" marker-end="url(#a1)" class="fa" opacity=".8"/>
+
+      <!-- 3: Orchestrator -->
+      <rect x="460" y="55" width="155" height="70" rx="12" fill="rgba(11,21,48,.9)" stroke="rgba(99,102,241,.4)" stroke-width="1.5" filter="url(#glow)"/>
+      <rect x="460" y="55" width="155" height="3" rx="1.5" fill="#6366f1" opacity=".8"/>
+      <text x="537" y="84" font-family="'Space Grotesk',sans-serif" font-size="12" font-weight="700" fill="#e2e8f0" text-anchor="middle">Orchestrator</text>
+      <text x="537" y="100" font-family="Inter,sans-serif" font-size="10.5" fill="#64748b" text-anchor="middle">State Machine</text>
+      <text x="537" y="114" font-family="Inter,sans-serif" font-size="10" fill="#334155" text-anchor="middle">Render + BullMQ</text>
+
+      <!-- Arrow 3→PO -->
+      <path d="M 617 72 L 633 72" stroke="#60a5fa" stroke-width="1.5" fill="none" stroke-dasharray="4 5" marker-end="url(#a1)" class="fb" opacity=".7"/>
+
+      <!-- 4a: PO -->
+      <rect x="635" y="55" width="120" height="55" rx="10" fill="rgba(11,21,48,.9)" stroke="rgba(59,130,246,.35)" stroke-width="1.2"/>
+      <rect x="635" y="55" width="120" height="2.5" rx="1" fill="#3b82f6" opacity=".7"/>
+      <text x="695" y="79" font-family="'Space Grotesk',sans-serif" font-size="11.5" font-weight="700" fill="#e2e8f0" text-anchor="middle">Agente PO</text>
+      <text x="695" y="95" font-family="Inter,sans-serif" font-size="10" fill="#64748b" text-anchor="middle">Gera PRD.md</text>
+
+      <!-- Arrow 3→LT (below) -->
+      <path d="M 617 108 L 633 200" stroke="#22d3ee" stroke-width="1.5" fill="none" stroke-dasharray="4 5" marker-end="url(#a1)" class="fb" opacity=".7"/>
+
+      <!-- 4b: LT -->
+      <rect x="635" y="178" width="120" height="55" rx="10" fill="rgba(11,21,48,.9)" stroke="rgba(34,211,238,.3)" stroke-width="1.2"/>
+      <rect x="635" y="178" width="120" height="2.5" rx="1" fill="#22d3ee" opacity=".7"/>
+      <text x="695" y="202" font-family="'Space Grotesk',sans-serif" font-size="11.5" font-weight="700" fill="#e2e8f0" text-anchor="middle">Agente LT</text>
+      <text x="695" y="218" font-family="Inter,sans-serif" font-size="10" fill="#64748b" text-anchor="middle">Gera Plano.md</text>
+
+      <!-- Gate 1 -->
+      <rect x="775" y="65" width="120" height="40" rx="8" fill="rgba(251,191,36,.08)" stroke="rgba(251,191,36,.25)" stroke-width="1.2"/>
+      <text x="835" y="82" font-family="Inter,sans-serif" font-size="10" font-weight="700" fill="#fbbf24" text-anchor="middle">⚑ Gate Humano</text>
+      <text x="835" y="96" font-family="Inter,sans-serif" font-size="9.5" fill="#92750a" text-anchor="middle">Aceitar PRD</text>
+
+      <rect x="775" y="188" width="120" height="40" rx="8" fill="rgba(251,191,36,.08)" stroke="rgba(251,191,36,.25)" stroke-width="1.2"/>
+      <text x="835" y="205" font-family="Inter,sans-serif" font-size="10" font-weight="700" fill="#fbbf24" text-anchor="middle">⚑ Gate Humano</text>
+      <text x="835" y="219" font-family="Inter,sans-serif" font-size="9.5" fill="#92750a" text-anchor="middle">Aprovar Plano</text>
+
+      <!-- Arrows gate→dev -->
+      <path d="M 897 85 L 913 130" stroke="#34d399" stroke-width="1.5" fill="none" stroke-dasharray="4 5" marker-end="url(#a2)" class="fb" opacity=".7"/>
+      <path d="M 897 208 L 913 152" stroke="#34d399" stroke-width="1.5" fill="none" stroke-dasharray="4 5" marker-end="url(#a2)" class="fb" opacity=".7"/>
+
+      <!-- 5: DEV -->
+      <rect x="915" y="105" width="120" height="55" rx="10" fill="rgba(11,21,48,.9)" stroke="rgba(52,211,153,.35)" stroke-width="1.2" filter="url(#glow)"/>
+      <rect x="915" y="105" width="120" height="2.5" rx="1" fill="#34d399" opacity=".7"/>
+      <text x="975" y="129" font-family="'Space Grotesk',sans-serif" font-size="11.5" font-weight="700" fill="#e2e8f0" text-anchor="middle">DEV ×5</text>
+      <text x="975" y="145" font-family="Inter,sans-serif" font-size="10" fill="#64748b" text-anchor="middle">Código + PR</text>
+
+      <!-- Arrow dev→qa -->
+      <path d="M 1037 132 L 1053 132" stroke="#fbbf24" stroke-width="1.5" fill="none" stroke-dasharray="4 5" marker-end="url(#a3)" class="fc" opacity=".8"/>
+
+      <!-- 6: QA -->
+      <rect x="1055" y="105" width="120" height="55" rx="10" fill="rgba(11,21,48,.9)" stroke="rgba(251,191,36,.3)" stroke-width="1.2"/>
+      <rect x="1055" y="105" width="120" height="2.5" rx="1" fill="#fbbf24" opacity=".7"/>
+      <text x="1115" y="129" font-family="'Space Grotesk',sans-serif" font-size="11.5" font-weight="700" fill="#e2e8f0" text-anchor="middle">Agente QA</text>
+      <text x="1115" y="145" font-family="Inter,sans-serif" font-size="10" fill="#64748b" text-anchor="middle">≥ 85% coverage</text>
+
+      <!-- Gate merge -->
+      <rect x="1055" y="188" width="120" height="40" rx="8" fill="rgba(251,191,36,.08)" stroke="rgba(251,191,36,.25)" stroke-width="1.2"/>
+      <text x="1115" y="205" font-family="Inter,sans-serif" font-size="10" font-weight="700" fill="#fbbf24" text-anchor="middle">⚑ Gate Humano</text>
+      <text x="1115" y="219" font-family="Inter,sans-serif" font-size="9.5" fill="#92750a" text-anchor="middle">Merge do PR</text>
+
+      <!-- Arrow qa→gate -->
+      <path d="M 1115 162 L 1115 186" stroke="#fbbf24" stroke-width="1.5" fill="none" marker-end="url(#a3)" opacity=".6"/>
+
+      <!-- Bottom labels -->
+      <text x="120" y="165" font-family="Inter,sans-serif" font-size="10" fill="#1e3a5f" text-anchor="middle">Grava .env.init</text>
+      <text x="120" y="178" font-family="Inter,sans-serif" font-size="10" fill="#1e3a5f" text-anchor="middle">Grava .env.render</text>
+      <text x="120" y="191" font-family="Inter,sans-serif" font-size="10" fill="#1e3a5f" text-anchor="middle">Configura Render via API</text>
+
+      <!-- Infra row -->
+      <text x="650" y="285" font-family="Inter,sans-serif" font-size="9.5" font-weight="600" fill="#1e3a5f" text-anchor="middle" letter-spacing="1">INFRAESTRUTURA COMPARTILHADA</text>
+      <rect x="460" y="295" width="680" height="90" rx="10" fill="rgba(59,130,246,.03)" stroke="rgba(59,130,246,.08)" stroke-width="1"/>
+
+      <rect x="475" y="308" width="90" height="30" rx="7" fill="rgba(62,207,142,.1)" stroke="rgba(62,207,142,.2)" stroke-width="1"/>
+      <text x="520" y="327" font-family="Inter,sans-serif" font-size="10" font-weight="600" fill="#3ecf8e" text-anchor="middle">Supabase</text>
+
+      <rect x="575" y="308" width="90" height="30" rx="7" fill="rgba(45,212,191,.1)" stroke="rgba(45,212,191,.2)" stroke-width="1"/>
+      <text x="620" y="327" font-family="Inter,sans-serif" font-size="10" font-weight="600" fill="#2dd4bf" text-anchor="middle">Upstash Redis</text>
+
+      <rect x="675" y="308" width="90" height="30" rx="7" fill="rgba(251,146,60,.1)" stroke="rgba(251,146,60,.2)" stroke-width="1"/>
+      <text x="720" y="327" font-family="Inter,sans-serif" font-size="10" font-weight="600" fill="#fb923c" text-anchor="middle">Anthropic</text>
+
+      <rect x="775" y="308" width="90" height="30" rx="7" fill="rgba(107,114,128,.1)" stroke="rgba(107,114,128,.2)" stroke-width="1"/>
+      <text x="820" y="327" font-family="Inter,sans-serif" font-size="10" font-weight="600" fill="#9ca3af" text-anchor="middle">GitHub</text>
+
+      <rect x="875" y="308" width="90" height="30" rx="7" fill="rgba(251,146,60,.08)" stroke="rgba(251,146,60,.15)" stroke-width="1"/>
+      <text x="920" y="327" font-family="Inter,sans-serif" font-size="10" font-weight="600" fill="#fb923c" text-anchor="middle">Betterstack</text>
+
+      <rect x="975" y="308" width="90" height="30" rx="7" fill="rgba(70,227,183,.08)" stroke="rgba(70,227,183,.15)" stroke-width="1"/>
+      <text x="1020" y="327" font-family="Inter,sans-serif" font-size="10" font-weight="600" fill="#46E3B7" text-anchor="middle">Render</text>
+
+      <text x="800" y="368" font-family="Inter,sans-serif" font-size="10" fill="#1e3a5f" text-anchor="middle">Todos configurados automaticamente pelo wizard agentic-squad init</text>
+    </svg>
+  </div>
+</div>
+
+<!-- ── INSTALAÇÃO ── -->
+<div class="section" id="install">
+  <div class="section-hdr">
+    <div class="section-bar"></div>
+    <h2 class="section-title">Instalação do CLI</h2>
+  </div>
+  <div class="install-block">
+    <div class="install-title">Instale o pacote globalmente via npm</div>
+    <div class="terminal">
+      <div class="term-bar">
+        <div class="term-dot" style="background:#ff5f57"></div>
+        <div class="term-dot" style="background:#ffbd2e"></div>
+        <div class="term-dot" style="background:#28ca41"></div>
+        <span class="term-title">terminal</span>
+      </div>
+      <div class="term-body">
+        <span class="t-comment"># Instala o CLI globalmente</span><br>
+        <span class="t-prompt">$ </span><span class="t-cmd">npm install -g agentic-squad-heavy</span><br><br>
+        <span class="t-comment"># Confirma a instalação</span><br>
+        <span class="t-prompt">$ </span><span class="t-cmd">agentic-squad --version</span><br>
+        <span class="t-ok">  agentic-squad-heavy v0.1.0</span><br><br>
+        <span class="t-comment"># Acesse a pasta do SEU projeto alvo e execute o wizard</span><br>
+        <span class="t-prompt">$ </span><span class="t-cmd">cd /caminho/para/seu-projeto</span><br>
+        <span class="t-prompt">$ </span><span class="t-cmd">agentic-squad init</span><br><br>
+        <span class="t-dim">┌──────────────────────────────────────────────────────┐</span><br>
+        <span class="t-dim">│  agentic-squad init  v2                              │</span><br>
+        <span class="t-dim">│  Wizard de configuração da Squad Agêntica            │</span><br>
+        <span class="t-dim">└──────────────────────────────────────────────────────┘</span>
+      </div>
+    </div>
+    <div class="action-tip mt-12">
+      <span class="action-tip-icon">💡</span>
+      <p>O wizard lê o <code>.env</code> existente e pré-preenche todos os campos já configurados. Execute novamente a qualquer momento para atualizar credenciais ou renovar o webhook Jira (expira em 30 dias).</p>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ STEPS ═══ -->
+<div class="section" id="steps">
+  <div class="section-hdr">
+    <div class="section-bar"></div>
+    <h2 class="section-title">Os 11 Steps do Wizard — Guia Detalhado</h2>
+  </div>
+  <div class="steps-list">
+
+    <!-- ── STEP 1 ── -->
+    <div class="step-item" id="step1">
+      <div class="step-spine">
+        <div class="step-num" style="--sn-bg:rgba(0,82,204,.15);--sn-c:#2684FF;--sn-bg-h:rgba(0,82,204,.25);--sn-c-h:#2684FF;--sn-glow:rgba(0,82,204,.3)">1</div>
+      </div>
+      <div class="step-body">
+        <div class="step-header">
+          <div class="step-service-badge" style="--sb-bg:rgba(0,82,204,.12);--sb-b:rgba(0,82,204,.25);--sb-c:#2684FF">📋 Jira</div>
+          <div class="step-titles">
+            <div class="step-title">Configuração do Jira</div>
+            <div class="step-tagline">Conecta a squad ao seu board de histórias e registra as credenciais de acesso</div>
+          </div>
+        </div>
+        <div class="step-cols">
+          <div class="step-box">
+            <div class="step-box-title">O que fazer</div>
+            <p>Informe a URL do seu workspace Jira, o e-mail da conta com acesso de administrador, o API Token (gerado em <strong>id.atlassian.com</strong>) e a chave do projeto (ex.: <code>SCRUM</code>). O webhook secret pode ser gerado automaticamente — basta pressionar Enter.</p>
+          </div>
+          <div class="step-box">
+            <div class="step-box-title">Para que serve</div>
+            <p>O wizard valida se as credenciais permitem acessar o projeto informado. Essas credenciais são usadas pelo servidor para mover cards automaticamente entre colunas e adicionar comentários com links para PRDs e Planos gerados pela IA.</p>
+          </div>
+        </div>
+        <div class="vars-list">
+          <div class="var-row"><span class="var-key">JIRA_BASE_URL</span><span class="var-req req-obrig">obrigatória</span><span class="var-hint">https://org.atlassian.net</span></div>
+          <div class="var-row"><span class="var-key">JIRA_EMAIL</span><span class="var-req req-obrig">obrigatória</span><span class="var-hint">e-mail da conta Atlassian</span></div>
+          <div class="var-row"><span class="var-key">JIRA_API_TOKEN</span><span class="var-req req-obrig">obrigatória</span><span class="var-hint">id.atlassian.com → Security</span></div>
+          <div class="var-row"><span class="var-key">JIRA_PROJECT_KEY</span><span class="var-req req-obrig">obrigatória</span><span class="var-hint">ex.: SCRUM, MYAPP</span></div>
+          <div class="var-row"><span class="var-key">JIRA_WEBHOOK_SECRET</span><span class="var-req req-auto">auto-gerado</span><span class="var-hint">Enter = gera automaticamente</span></div>
+        </div>
+        <div class="action-tip mt-12">
+          <span class="action-tip-icon">🔑</span>
+          <p>Para gerar o API Token: <a>id.atlassian.com</a> → <strong>Security</strong> → <strong>API tokens</strong> → <strong>Create API token</strong>. O token é global para toda a sua conta Atlassian — não é por projeto.</p>
+        </div>
+      </div>
+    </div>
+    <hr class="step-divider">
+
+    <!-- ── STEP 2 ── -->
+    <div class="step-item" id="step2">
+      <div class="step-spine">
+        <div class="step-num" style="--sn-bg:rgba(75,85,99,.15);--sn-c:#9ca3af;--sn-bg-h:rgba(75,85,99,.25);--sn-c-h:#d1d5db;--sn-glow:rgba(75,85,99,.3)">2</div>
+      </div>
+      <div class="step-body">
+        <div class="step-header">
+          <div class="step-service-badge" style="--sb-bg:rgba(75,85,99,.12);--sb-b:rgba(75,85,99,.25);--sb-c:#9ca3af">🐙 GitHub</div>
+          <div class="step-titles">
+            <div class="step-title">Configuração do GitHub App</div>
+            <div class="step-tagline">Autentica a squad para criar commits, branches e Pull Requests no seu repositório</div>
+          </div>
+        </div>
+        <div class="step-cols">
+          <div class="step-box">
+            <div class="step-box-title">O que fazer</div>
+            <p>Informe o dono e nome do repositório alvo. Forneça o <strong>App ID</strong> e o <strong>Installation ID</strong> do GitHub App (encontrados em <em>github.com/settings/apps → seu app</em>). Para a <strong>Private Key</strong>, informe o caminho do arquivo <code>.pem</code> ou cole o conteúdo inline.</p>
+          </div>
+          <div class="step-box">
+            <div class="step-box-title">Para que serve</div>
+            <p>O GitHub App é a identidade da squad no seu repositório. Com ele, os agentes DEV criam branches <code>agent/task-XX</code>, fazem commits atômicos e abrem Pull Requests com o código gerado. Toda a rastreabilidade fica no histórico do Git.</p>
+          </div>
+        </div>
+        <div class="vars-list">
+          <div class="var-row"><span class="var-key">GITHUB_OWNER</span><span class="var-req req-obrig">obrigatória</span><span class="var-hint">usuário ou organização</span></div>
+          <div class="var-row"><span class="var-key">GITHUB_REPO</span><span class="var-req req-obrig">obrigatória</span><span class="var-hint">nome exato do repositório</span></div>
+          <div class="var-row"><span class="var-key">GITHUB_APP_ID</span><span class="var-req req-obrig">obrigatória</span><span class="var-hint">número na página do App</span></div>
+          <div class="var-row"><span class="var-key">GITHUB_APP_INSTALLATION_ID</span><span class="var-req req-obrig">obrigatória</span><span class="var-hint">ID da instalação no repo</span></div>
+          <div class="var-row"><span class="var-key">GITHUB_APP_PRIVATE_KEY</span><span class="var-req req-obrig">obrigatória</span><span class="var-hint">caminho .pem ou inline \n</span></div>
+          <div class="var-row"><span class="var-key">GITHUB_DEFAULT_BRANCH</span><span class="var-req req-auto">default: main</span><span class="var-hint">branch principal do repo</span></div>
+        </div>
+        <div class="warn-tip mt-12">
+          <span style="flex-shrink:0;margin-top:1px">⚠️</span>
+          <p>O <strong>Installation ID</strong> é diferente do App ID. Acesse <em>github.com/settings/installations</em>, clique no App instalado — o número na URL é o Installation ID.</p>
+        </div>
+      </div>
+    </div>
+    <hr class="step-divider">
+
+    <!-- ── STEP 3 ── -->
+    <div class="step-item" id="step3">
+      <div class="step-spine">
+        <div class="step-num" style="--sn-bg:rgba(34,211,238,.1);--sn-c:#22d3ee;--sn-bg-h:rgba(34,211,238,.2);--sn-c-h:#22d3ee;--sn-glow:rgba(34,211,238,.25)">3</div>
+      </div>
+      <div class="step-body">
+        <div class="step-header">
+          <div class="step-service-badge" style="--sb-bg:rgba(34,211,238,.1);--sb-b:rgba(34,211,238,.22);--sb-c:#22d3ee">🔍 Stack</div>
+          <div class="step-titles">
+            <div class="step-title">Detecção Automática de Stack</div>
+            <div class="step-tagline">Identifica a linguagem e configura os comandos de teste e cobertura do seu projeto</div>
+          </div>
+        </div>
+        <div class="step-cols">
+          <div class="step-box">
+            <div class="step-box-title">O que fazer</div>
+            <p>O wizard lê automaticamente os manifests do seu repositório (<code>package.json</code>, <code>pom.xml</code>, <code>go.mod</code>, etc.) e sugere os comandos de teste. Confirme ou ajuste conforme necessário. Na maioria dos casos, apenas pressione Enter para aceitar.</p>
+          </div>
+          <div class="step-box">
+            <div class="step-box-title">Para que serve</div>
+            <p>O Agente QA usa esses comandos para rodar os testes após cada ciclo de desenvolvimento. A cobertura medida é comparada ao <code>threshold</code> — abaixo disso, o loop DEV↔QA é ativado para corrigir automaticamente.</p>
+          </div>
+        </div>
+        <div class="vars-list">
+          <div class="var-row"><span class="var-key">CI_TEST_COMMAND</span><span class="var-req req-auto">auto-detectado</span><span class="var-hint">ex.: npm test, pytest</span></div>
+          <div class="var-row"><span class="var-key">CI_COVERAGE_COMMAND</span><span class="var-req req-auto">auto-detectado</span><span class="var-hint">ex.: npm run test:coverage</span></div>
+          <div class="var-row"><span class="var-key">CI_COVERAGE_THRESHOLD</span><span class="var-req req-auto">default: 80%</span><span class="var-hint">mínimo de cobertura exigido</span></div>
+        </div>
+        <div class="action-tip mt-12">
+          <span class="action-tip-icon">🌐</span>
+          <p>Linguagens suportadas: <strong>Node.js</strong> (npm/yarn/pnpm/bun · vitest/jest/mocha), <strong>Python</strong> (pip/poetry/pdm · pytest), <strong>Java</strong> (maven/gradle), <strong>Go</strong>, <strong>Rust</strong>, <strong>Ruby</strong>, <strong>PHP</strong>.</p>
+        </div>
+      </div>
+    </div>
+    <hr class="step-divider">
+
+    <!-- ── STEP 4 ── -->
+    <div class="step-item" id="step4">
+      <div class="step-spine">
+        <div class="step-num" style="--sn-bg:rgba(62,207,142,.1);--sn-c:#3ecf8e;--sn-bg-h:rgba(62,207,142,.2);--sn-c-h:#3ecf8e;--sn-glow:rgba(62,207,142,.25)">4</div>
+      </div>
+      <div class="step-body">
+        <div class="step-header">
+          <div class="step-service-badge" style="--sb-bg:rgba(62,207,142,.1);--sb-b:rgba(62,207,142,.22);--sb-c:#3ecf8e">🗄️ Supabase</div>
+          <div class="step-titles">
+            <div class="step-title">Banco de Dados — Supabase / PostgreSQL</div>
+            <div class="step-tagline">Persiste o estado de todas as histórias, execuções de agentes e métricas de custo</div>
+          </div>
+        </div>
+        <div class="step-cols">
+          <div class="step-box">
+            <div class="step-box-title">O que fazer</div>
+            <p>Acesse <strong>Supabase → Project Settings → Database → Connection string → URI</strong> e copie a URL. Cole no campo <code>DATABASE_URL</code>. O wizard valida a conexão com <code>SELECT 1</code> e pergunta se deve executar as migrations automaticamente.</p>
+          </div>
+          <div class="step-box">
+            <div class="step-box-title">Para que serve</div>
+            <p>O banco é o estado central da squad. Todas as histórias em processamento, os artefatos gerados (PRD, Plano), os logs de execução por agente e os custos de tokens são persistidos aqui via Drizzle ORM.</p>
+          </div>
+        </div>
+        <div class="vars-list">
+          <div class="var-row"><span class="var-key">DATABASE_URL</span><span class="var-req req-obrig">obrigatória</span><span class="var-hint">postgresql://postgres:...</span></div>
+          <div class="var-row"><span class="var-key">SUPABASE_URL</span><span class="var-req req-opcio">opcional</span><span class="var-hint">https://xxx.supabase.co</span></div>
+          <div class="var-row"><span class="var-key">SUPABASE_ANON_KEY</span><span class="var-req req-opcio">opcional</span><span class="var-hint">chave pública anon</span></div>
+          <div class="var-row"><span class="var-key">SUPABASE_SERVICE_ROLE_KEY</span><span class="var-req req-opcio">opcional</span><span class="var-hint">chave de service role</span></div>
+        </div>
+        <div class="action-tip mt-12">
+          <span class="action-tip-icon">⚡</span>
+          <p>Aceite a execução das <strong>migrations</strong> quando o wizard perguntar — elas criam as tabelas <code>stories</code>, <code>agent_runs</code> e a estrutura do Drizzle. Sem as migrations o servidor não inicializa.</p>
+        </div>
+      </div>
+    </div>
+    <hr class="step-divider">
+
+    <!-- ── STEP 5 ── -->
+    <div class="step-item" id="step5">
+      <div class="step-spine">
+        <div class="step-num" style="--sn-bg:rgba(45,212,191,.1);--sn-c:#2dd4bf;--sn-bg-h:rgba(45,212,191,.2);--sn-c-h:#2dd4bf;--sn-glow:rgba(45,212,191,.25)">5</div>
+      </div>
+      <div class="step-body">
+        <div class="step-header">
+          <div class="step-service-badge" style="--sb-bg:rgba(45,212,191,.1);--sb-b:rgba(45,212,191,.22);--sb-c:#2dd4bf">⚡ Redis</div>
+          <div class="step-titles">
+            <div class="step-title">Fila de Jobs — Upstash Redis</div>
+            <div class="step-tagline">Backend do BullMQ para enfileirar e processar tarefas dos agentes com retry e DLQ</div>
+          </div>
+        </div>
+        <div class="step-cols">
+          <div class="step-box">
+            <div class="step-box-title">O que fazer</div>
+            <p>Acesse <strong>Upstash Console → seu database → Details</strong> e copie a <em>Connection String</em> no formato <code>rediss://</code> (com TLS). Cole no campo <code>REDIS_URL</code>. O wizard faz um <code>PING</code> para confirmar a conexão.</p>
+          </div>
+          <div class="step-box">
+            <div class="step-box-title">Para que serve</div>
+            <p>O Redis é o backbone do BullMQ. Cada evento Jira vira um job enfileirado com prioridade, retry exponencial e dead-letter queue (DLQ). Permite até 5 agentes DEV rodando em paralelo sem race conditions.</p>
+          </div>
+        </div>
+        <div class="vars-list">
+          <div class="var-row"><span class="var-key">REDIS_URL</span><span class="var-req req-obrig">obrigatória</span><span class="var-hint">rediss://default:...@host:port</span></div>
+        </div>
+        <div class="warn-tip mt-12">
+          <span style="flex-shrink:0;margin-top:1px">⚠️</span>
+          <p>Use sempre a URL com prefixo <code>rediss://</code> (dois s) para conexão TLS — o Upstash exige TLS em produção. URLs <code>redis://</code> (sem TLS) funcionam apenas em ambientes locais.</p>
+        </div>
+      </div>
+    </div>
+    <hr class="step-divider">
+
+    <!-- ── STEP 6 ── -->
+    <div class="step-item" id="step6">
+      <div class="step-spine">
+        <div class="step-num" style="--sn-bg:rgba(251,146,60,.1);--sn-c:#fb923c;--sn-bg-h:rgba(251,146,60,.2);--sn-c-h:#fb923c;--sn-glow:rgba(251,146,60,.25)">6</div>
+      </div>
+      <div class="step-body">
+        <div class="step-header">
+          <div class="step-service-badge" style="--sb-bg:rgba(251,146,60,.1);--sb-b:rgba(251,146,60,.22);--sb-c:#fb923c">🤖 Anthropic</div>
+          <div class="step-titles">
+            <div class="step-title">Motor de IA — Anthropic API</div>
+            <div class="step-tagline">A chave que dá inteligência a todos os agentes: PO, LT, DEV e QA</div>
+          </div>
+        </div>
+        <div class="step-cols">
+          <div class="step-box">
+            <div class="step-box-title">O que fazer</div>
+            <p>Acesse <strong>console.anthropic.com → Settings → API Keys</strong> e gere uma chave. Cole no campo <code>ANTHROPIC_API_KEY</code>. Em seguida, configure o modelo para cada agente ou pressione Enter para aceitar os defaults recomendados.</p>
+          </div>
+          <div class="step-box">
+            <div class="step-box-title">Para que serve</div>
+            <p>Cada agente usa o Claude para raciocinar sobre a história e gerar artefatos. <strong>Opus 4</strong> é usado para PO, LT, QA e Orchestrator (raciocínio profundo). <strong>Sonnet 4</strong> é usado para os 5 DEVs (menor custo, ótima geração de código).</p>
+          </div>
+        </div>
+        <div class="vars-list">
+          <div class="var-row"><span class="var-key">ANTHROPIC_API_KEY</span><span class="var-req req-obrig">obrigatória</span><span class="var-hint">sk-ant-...</span></div>
+          <div class="var-row"><span class="var-key">MODEL_ORCHESTRATOR</span><span class="var-req req-auto">default: claude-opus-4-7</span><span class="var-hint">aceita: opus / sonnet / haiku</span></div>
+          <div class="var-row"><span class="var-key">MODEL_PO</span><span class="var-req req-auto">default: claude-opus-4-7</span><span class="var-hint">gera PRD.md</span></div>
+          <div class="var-row"><span class="var-key">MODEL_LT</span><span class="var-req req-auto">default: claude-opus-4-7</span><span class="var-hint">gera Plano.md</span></div>
+          <div class="var-row"><span class="var-key">MODEL_QA</span><span class="var-req req-auto">default: claude-opus-4-7</span><span class="var-hint">valida cobertura</span></div>
+          <div class="var-row"><span class="var-key">MODEL_DEV</span><span class="var-req req-auto">default: claude-sonnet-4-6</span><span class="var-hint">gera código (~$0.50/história)</span></div>
+        </div>
+        <div class="action-tip mt-12">
+          <span class="action-tip-icon">💡</span>
+          <p>O wizard faz uma chamada de validação de <strong>~$0.00003</strong> (1 token) apenas para confirmar que a chave é válida. Você pode digitar atalhos: <code>opus</code>, <code>sonnet</code> ou <code>haiku</code> em vez do nome completo.</p>
+        </div>
+      </div>
+    </div>
+    <hr class="step-divider">
+
+    <!-- ── STEP 7 ── -->
+    <div class="step-item" id="step7">
+      <div class="step-spine">
+        <div class="step-num" style="--sn-bg:rgba(251,146,60,.08);--sn-c:#f97316;--sn-bg-h:rgba(251,146,60,.15);--sn-c-h:#fb923c;--sn-glow:rgba(251,146,60,.2)">7</div>
+      </div>
+      <div class="step-body">
+        <div class="step-header">
+          <div class="step-service-badge" style="--sb-bg:rgba(251,146,60,.08);--sb-b:rgba(251,146,60,.18);--sb-c:#fb923c">📊 Betterstack</div>
+          <div class="step-titles">
+            <div class="step-title">Observabilidade — Betterstack + Thresholds</div>
+            <div class="step-tagline">Logs JSON estruturados com contexto de agente, custo e story_id para rastreabilidade completa</div>
+          </div>
+        </div>
+        <div class="step-cols">
+          <div class="step-box">
+            <div class="step-box-title">O que fazer</div>
+            <p>Acesse <strong>betterstack.com → Telemetry → Sources → New Source</strong>, copie o <em>Source Token</em> e cole no wizard. Se deixado em branco, os logs ficam apenas no stdout do Render. Configure também os thresholds de concorrência e custo.</p>
+          </div>
+          <div class="step-box">
+            <div class="step-box-title">Para que serve</div>
+            <p>Com Betterstack, cada log carrega <code>story_id</code>, <code>agent</code>, <code>phase</code>, <code>duration_ms</code> e <code>token_cost</code>. Você pode criar alertas para histórias acima do custo esperado e dashboards de performance por agente.</p>
+          </div>
+        </div>
+        <div class="vars-list">
+          <div class="var-row"><span class="var-key">BETTERSTACK_SOURCE_TOKEN</span><span class="var-req req-opcio">opcional</span><span class="var-hint">telemetry token</span></div>
+          <div class="var-row"><span class="var-key">AGENTS_DEV_CONCURRENCY</span><span class="var-req req-auto">default: 5</span><span class="var-hint">DEVs paralelos máximos</span></div>
+          <div class="var-row"><span class="var-key">COST_ALERT_THRESHOLD_USD</span><span class="var-req req-auto">default: 1.00</span><span class="var-hint">alerta de custo por história</span></div>
+        </div>
+      </div>
+    </div>
+    <hr class="step-divider">
+
+    <!-- ── STEP 8 ── -->
+    <div class="step-item" id="step8">
+      <div class="step-spine">
+        <div class="step-num" style="--sn-bg:rgba(70,227,183,.1);--sn-c:#46E3B7;--sn-bg-h:rgba(70,227,183,.2);--sn-c-h:#46E3B7;--sn-glow:rgba(70,227,183,.25)">8</div>
+      </div>
+      <div class="step-body">
+        <div class="step-header">
+          <div class="step-service-badge" style="--sb-bg:rgba(70,227,183,.1);--sb-b:rgba(70,227,183,.22);--sb-c:#46E3B7">🚀 Render</div>
+          <div class="step-titles">
+            <div class="step-title">Render — Configuração Completa do Serviço</div>
+            <div class="step-tagline">Autentica na API do Render, seleciona o serviço e envia todas as variáveis automaticamente</div>
+          </div>
+        </div>
+        <div class="step-cols">
+          <div class="step-box">
+            <div class="step-box-title">O que fazer (3 sub-etapas)</div>
+            <p><strong>8a —</strong> Informe a <em>API Key</em> do Render (<em>Account Settings → API Keys</em>). O wizard lista seus Web Services e você escolhe pelo número.<br><br>
+            <strong>8b —</strong> Revisão das 26 variáveis — pré-preenchidas dos steps anteriores. Valores sensíveis são mascarados.<br><br>
+            <strong>8c —</strong> O wizard pergunta se envia as variáveis via API. Se sim, o Render faz um novo deploy automaticamente.</p>
+          </div>
+          <div class="step-box">
+            <div class="step-box-title">Para que serve</div>
+            <p>Elimina o trabalho manual de copiar 26 variáveis no painel do Render. O wizard faz merge inteligente — preserva variáveis que você tenha configurado manualmente e sobrescreve apenas as do wizard. Após o envio, o Render inicia um deploy com a configuração completa.</p>
+          </div>
+        </div>
+        <div class="vars-list">
+          <div class="var-row"><span class="var-key">RENDER_API_KEY</span><span class="var-req req-obrig">wizard only</span><span class="var-hint">não entra no .env.init</span></div>
+          <div class="var-row"><span class="var-key">SERVICE_URL</span><span class="var-req req-obrig">obrigatória</span><span class="var-hint">https://xxx.onrender.com</span></div>
+          <div class="var-row"><span class="var-key">NODE_ENV</span><span class="var-req req-auto">default: production</span><span class="var-hint"></span></div>
+          <div class="var-row"><span class="var-key">PORT</span><span class="var-req req-auto">default: 3000</span><span class="var-hint"></span></div>
+          <div class="var-row"><span class="var-key" style="color:var(--text3);font-size:11px">+ 26 vars revisadas e enviadas ao Render</span><span class="var-req req-auto">via API</span><span class="var-hint">merge inteligente</span></div>
+        </div>
+        <div class="action-tip mt-12">
+          <span class="action-tip-icon">📁</span>
+          <p>O arquivo <code>.env.render</code> é sempre gravado como fallback — caso prefira configurar manualmente via <code>render env set --service &lt;id&gt; &lt; .env.render</code>. A <code>RENDER_API_KEY</code> <strong>não</strong> é salva nos arquivos de saída.</p>
+        </div>
+      </div>
+    </div>
+    <hr class="step-divider">
+
+    <!-- ── STEP 9 ── -->
+    <div class="step-item" id="step9">
+      <div class="step-spine">
+        <div class="step-num" style="--sn-bg:rgba(167,139,250,.1);--sn-c:#a78bfa;--sn-bg-h:rgba(167,139,250,.2);--sn-c-h:#a78bfa;--sn-glow:rgba(167,139,250,.25)">9</div>
+      </div>
+      <div class="step-body">
+        <div class="step-header">
+          <div class="step-service-badge" style="--sb-bg:rgba(167,139,250,.1);--sb-b:rgba(167,139,250,.22);--sb-c:#a78bfa">⚙️ CI</div>
+          <div class="step-titles">
+            <div class="step-title">Instalação do GitHub Actions Workflow</div>
+            <div class="step-tagline">Instala o pipeline de CI nos branches dos agentes DEV do seu repositório alvo</div>
+          </div>
+        </div>
+        <div class="step-cols">
+          <div class="step-box">
+            <div class="step-box-title">O que fazer</div>
+            <p>Confirme a instalação quando o wizard perguntar. Ele fará um commit automático do arquivo <code>.github/workflows/agent-dev.yml</code> no seu repositório. Nenhuma interação adicional é necessária.</p>
+          </div>
+          <div class="step-box">
+            <div class="step-box-title">Para que serve</div>
+            <p>O workflow é ativado quando o Agente DEV faz push em branches <code>agent/task-*</code>. Ele roda lint, typecheck, build, testes e grava o relatório de cobertura em <code>.qa-coverage.json</code> — que o Agente QA lê para decidir se o PR está aprovado.</p>
+          </div>
+        </div>
+        <div class="action-tip mt-12">
+          <span class="action-tip-icon">🔒</span>
+          <p>Após o wizard, configure <strong>Branch Protection</strong> no GitHub: <em>Settings → Branches → Add rule → branch: main → Require status checks: "Lint · Typecheck · Build · Test · Coverage"</em>. Isso garante que o QA não pode aprovar um PR com CI quebrado.</p>
+        </div>
+      </div>
+    </div>
+    <hr class="step-divider">
+
+    <!-- ── STEP 10 ── -->
+    <div class="step-item" id="step10">
+      <div class="step-spine">
+        <div class="step-num" style="--sn-bg:rgba(0,82,204,.1);--sn-c:#2684FF;--sn-bg-h:rgba(0,82,204,.2);--sn-c-h:#2684FF;--sn-glow:rgba(0,82,204,.25)">10</div>
+      </div>
+      <div class="step-body">
+        <div class="step-header">
+          <div class="step-service-badge" style="--sb-bg:rgba(0,82,204,.12);--sb-b:rgba(0,82,204,.25);--sb-c:#2684FF">🔗 Webhook</div>
+          <div class="step-titles">
+            <div class="step-title">Registro do Webhook no Jira</div>
+            <div class="step-tagline">Liga o Jira ao servidor Render — toda transição de card dispara a squad automaticamente</div>
+          </div>
+        </div>
+        <div class="step-cols">
+          <div class="step-box">
+            <div class="step-box-title">O que fazer</div>
+            <p>Confirme quando o wizard perguntar. Ele registra automaticamente o webhook via API do Jira com JQL <code>project = "SEUKEY"</code> e evento <code>jira:issue_updated</code>. A URL gerada inclui o secret para validação HMAC.</p>
+          </div>
+          <div class="step-box">
+            <div class="step-box-title">Para que serve</div>
+            <p>É a "campainha" da squad. Quando você mover um card no Jira, o webhook dispara um POST para <code>/webhooks/jira</code> do Render em menos de 5 segundos, iniciando o pipeline de agentes para aquela história.</p>
+          </div>
+        </div>
+        <div class="warn-tip mt-12">
+          <span style="flex-shrink:0;margin-top:1px">⚠️</span>
+          <p><strong>Webhooks dinâmicos do Jira expiram em 30 dias.</strong> Execute <code>agentic-squad init</code> novamente antes do vencimento para renovar. O wizard detecta os valores existentes no <code>.env</code> e preenche tudo automaticamente — leva menos de 1 minuto.</p>
+        </div>
+      </div>
+    </div>
+    <hr class="step-divider">
+
+    <!-- ── STEP 11 ── -->
+    <div class="step-item" id="step11">
+      <div class="step-spine">
+        <div class="step-num" style="--sn-bg:rgba(52,211,153,.1);--sn-c:#34d399;--sn-bg-h:rgba(52,211,153,.2);--sn-c-h:#34d399;--sn-glow:rgba(52,211,153,.25)">11</div>
+      </div>
+      <div class="step-body">
+        <div class="step-header">
+          <div class="step-service-badge" style="--sb-bg:rgba(52,211,153,.1);--sb-b:rgba(52,211,153,.22);--sb-c:#34d399">✅ Smoke Test</div>
+          <div class="step-titles">
+            <div class="step-title">Smoke Test — Validação Ponta a Ponta</div>
+            <div class="step-tagline">Cria uma história real no Jira, dispara o webhook e confirma que o pipeline responde corretamente</div>
+          </div>
+        </div>
+        <div class="step-cols">
+          <div class="step-box">
+            <div class="step-box-title">O que fazer</div>
+            <p>Confirme quando o wizard perguntar. Ele cria uma issue de teste com o título <em>"[SMOKE TEST] agentic-squad init"</em>, move para o status trigger, aguarda a resposta do webhook e valida que retorna <code>{"queued":true}</code>. A issue é deletada automaticamente ao final.</p>
+          </div>
+          <div class="step-box">
+            <div class="step-box-title">Para que serve</div>
+            <p>Confirma que toda a cadeia está funcionando: Jira → Webhook → Render → BullMQ → fila de jobs. É a prova final de que a squad está pronta para receber histórias reais. Se falhar, o wizard indica exatamente qual parte da cadeia está quebrada.</p>
+          </div>
+        </div>
+        <div class="action-tip mt-12">
+          <span class="action-tip-icon">✅</span>
+          <p>Resposta esperada: <code>{"queued":true}</code>. Se o serviço no Render ainda estiver em deploy após o Step 8, o smoke test será pulado automaticamente — execute o wizard novamente após o deploy estabilizar.</p>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /steps-list -->
+</div>
+
+<!-- ── RESULTADO: ARQUIVOS DE SAÍDA ── -->
+<div class="section" id="output">
+  <div class="section-hdr">
+    <div class="section-bar"></div>
+    <h2 class="section-title">Arquivos Gerados ao Final do Wizard</h2>
+    <span class="section-note">2 arquivos · Nunca sobem para o Git</span>
+  </div>
+  <div class="output-grid">
+    <div class="output-card">
+      <div class="output-head">
+        <div class="output-icon" style="background:rgba(59,130,246,.15);border:1px solid rgba(59,130,246,.25)">📄</div>
+        <div>
+          <div class="output-name">.env.init</div>
+          <div class="output-desc">Todas as variáveis coletadas, organizadas por serviço</div>
+        </div>
+      </div>
+      <div class="output-body">
+        <pre><span class="env-comment"># ── Modelos por agente ────────────────────</span>
+<span class="env-key">MODEL_ORCHESTRATOR</span>=<span class="env-val">claude-opus-4-7</span>
+<span class="env-key">MODEL_DEV</span>=<span class="env-val">claude-sonnet-4-6</span>
+
+<span class="env-comment"># ── Jira ──────────────────────────────────</span>
+<span class="env-key">JIRA_BASE_URL</span>=<span class="env-val">https://org.atlassian.net</span>
+<span class="env-key">JIRA_PROJECT_KEY</span>=<span class="env-val">SCRUM</span>
+
+<span class="env-comment"># ── GitHub App ────────────────────────────</span>
+<span class="env-key">GITHUB_OWNER</span>=<span class="env-val">sua-org</span>
+<span class="env-key">GITHUB_REPO</span>=<span class="env-val">seu-repo</span>
+
+<span class="env-comment"># ── Banco de dados ────────────────────────</span>
+<span class="env-key">DATABASE_URL</span>=<span class="env-val">postgresql://...</span>
+
+<span class="env-comment"># ── Redis · Anthropic · CI · Agentes ──────</span>
+<span class="env-key">REDIS_URL</span>=<span class="env-val">rediss://...</span>
+<span class="env-key">ANTHROPIC_API_KEY</span>=<span class="env-val">sk-ant-...</span>
+<span class="env-key">CI_COVERAGE_THRESHOLD</span>=<span class="env-val">85</span>
+<span class="env-key">AGENTS_DEV_CONCURRENCY</span>=<span class="env-val">5</span></pre>
+      </div>
+    </div>
+    <div class="output-card">
+      <div class="output-head">
+        <div class="output-icon" style="background:rgba(70,227,183,.12);border:1px solid rgba(70,227,183,.22)">🚀</div>
+        <div>
+          <div class="output-name">.env.render</div>
+          <div class="output-desc">26 variáveis prontas para o Render — flat sem comentários</div>
+        </div>
+      </div>
+      <div class="output-body">
+        <pre><span class="env-key">ANTHROPIC_API_KEY</span>=<span class="env-val">sk-ant-...</span>
+<span class="env-key">CI_COVERAGE_COMMAND</span>=<span class="env-val">npm run test:coverage</span>
+<span class="env-key">CI_COVERAGE_THRESHOLD</span>=<span class="env-val">85</span>
+<span class="env-key">CI_TEST_COMMAND</span>=<span class="env-val">npm test</span>
+<span class="env-key">DATABASE_URL</span>=<span class="env-val">postgresql://...</span>
+<span class="env-key">GITHUB_APP_ID</span>=<span class="env-val">123456</span>
+<span class="env-key">GITHUB_OWNER</span>=<span class="env-val">sua-org</span>
+<span class="env-key">GITHUB_REPO</span>=<span class="env-val">seu-repo</span>
+<span class="env-comment">... (26 variáveis no total)</span>
+
+<span class="env-comment"># Uso alternativo via CLI:</span>
+<span class="env-comment"># render env set --service &lt;id&gt; \</span>
+<span class="env-comment">#   &lt; .env.render</span></pre>
+      </div>
+    </div>
+  </div>
+  <div class="action-tip mt-16">
+    <span class="action-tip-icon">🔒</span>
+    <p>Ambos os arquivos estão no <code>.gitignore</code> — <strong>nunca sobem para o GitHub</strong>. Além dos arquivos, o wizard realiza 3 ações no mundo externo: executa as migrations no Supabase, instala o workflow de CI no GitHub e registra o webhook no Jira.</p>
+  </div>
+</div>
+
+<!-- ── PRÓXIMOS PASSOS ── -->
+<div class="section" id="proximos">
+  <div class="section-hdr">
+    <div class="section-bar"></div>
+    <h2 class="section-title">Próximos Passos — Após o Wizard Concluir</h2>
+  </div>
+  <div class="next-grid">
+    <div class="next-card" style="--nc:#4b5563">
+      <span class="next-n">01</span>
+      <div class="next-title">🔒 Branch Protection no GitHub</div>
+      <div class="next-desc">Acesse <em>Settings → Branches → Add rule → main</em> e ative <em>Require status checks</em>: <code>Lint · Typecheck · Build · Test · Coverage</code>. Impede que o QA aprove um PR com CI quebrado.</div>
+    </div>
+    <div class="next-card" style="--nc:#34d399">
+      <span class="next-n">02</span>
+      <div class="next-title">📊 UptimeRobot — Monitoramento</div>
+      <div class="next-desc">Configure manualmente: <em>uptimerobot.com → Add Monitor → HTTP → URL: sua-url.onrender.com/health → Interval: 5 min</em>. Você recebe alertas imediatos em caso de downtime.</div>
+    </div>
+    <div class="next-card" style="--nc:#3b82f6">
+      <span class="next-n">03</span>
+      <div class="next-title">🚀 Primeiro Deploy — Verificar Logs</div>
+      <div class="next-desc">Acesse o painel do Render e aguarde o deploy concluir. Verifique os logs iniciais — o servidor faz startup recovery automaticamente e conecta banco, Redis e workers.</div>
+    </div>
+    <div class="next-card" style="--nc:#0052CC">
+      <span class="next-n">04</span>
+      <div class="next-title">📋 Primeira História Real no Jira</div>
+      <div class="next-desc">Crie uma história simples no seu board e mova de <em>Backlog</em> para <em>A Refinar</em>. Em menos de 30 segundos o Agente PO deve iniciar e gerar o PRD.md no GitHub.</div>
+    </div>
+    <div class="next-card" style="--nc:#fbbf24">
+      <span class="next-n">05</span>
+      <div class="next-title">⚑ Gates Humanos — Entender o Fluxo</div>
+      <div class="next-desc">A squad para em 3 momentos aguardando você: <strong>aceite do PRD</strong>, <strong>aprovação do Plano</strong> e <strong>merge do PR</strong>. O merge final é <em>sempre</em> uma decisão humana — nunca automatizada.</div>
+    </div>
+    <div class="next-card" style="--nc:#a78bfa">
+      <span class="next-n">06</span>
+      <div class="next-title">🔄 Renovar Webhook em 30 dias</div>
+      <div class="next-desc">Webhooks dinâmicos do Jira expiram em 30 dias. Execute <code>agentic-squad init</code> novamente — o wizard pré-preenche tudo do <code>.env</code> e renova apenas o webhook em &lt; 1 min.</div>
+    </div>
+  </div>
+
+  <!-- Terminal final -->
+  <div class="install-block" style="margin-top:24px">
+    <div class="install-title">Checklist de validação pós-configuração</div>
+    <div class="terminal">
+      <div class="term-bar">
+        <div class="term-dot" style="background:#ff5f57"></div>
+        <div class="term-dot" style="background:#ffbd2e"></div>
+        <div class="term-dot" style="background:#28ca41"></div>
+        <span class="term-title">validação manual</span>
+      </div>
+      <div class="term-body">
+        <span class="t-ok">✓</span> <span class="t-dim">Render → deploy status: Live</span><br>
+        <span class="t-ok">✓</span> <span class="t-dim">GET https://sua-url.onrender.com/health → {"status":"ok"}</span><br>
+        <span class="t-ok">✓</span> <span class="t-dim">Jira Admin → System → WebHooks → webhook ativo</span><br>
+        <span class="t-ok">✓</span> <span class="t-dim">GitHub → repo → .github/workflows/agent-dev.yml existe</span><br>
+        <span class="t-ok">✓</span> <span class="t-dim">GitHub → Settings → Branches → Branch protection ativo</span><br>
+        <span class="t-ok">✓</span> <span class="t-dim">UptimeRobot → monitor ativo</span><br>
+        <span class="t-warn">→</span> <span class="t-dim">Mover card Jira para "A Refinar" e aguardar PRD.md no GitHub</span><br>
+        <span class="t-warn">→</span> <span class="t-dim">Aceitar PRD.md → mover para "PRD Aceito"</span><br>
+        <span class="t-warn">→</span> <span class="t-dim">Aguardar Plano.md → Aprovar → mover para "Plano Validado"</span><br>
+        <span class="t-warn">→</span> <span class="t-dim">Aguardar Pull Requests dos Agentes DEV</span><br>
+        <span class="t-ok">✓</span> <span class="t-dim">Squad configurada e operacional 🎉</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div><!-- /content -->
+
+<!-- ═══════════ FOOTER ═══════════ -->
+<footer class="footer">
+  <div class="footer-l">
+    <span class="footer-logo">Squad 100% Agêntica</span>
+    <span style="color:var(--text4);margin:0 8px">·</span>
+    <span class="footer-copy">Guia de Configuração v2.0 · Maio 2026 · agentic-squad init</span>
+  </div>
+  <div class="footer-r">
+    <span class="footer-chip">11 Steps</span>
+    <span class="footer-chip">TypeScript · Node.js ≥ 20</span>
+    <span class="footer-chip">Claude Opus 4 + Sonnet 4</span>
+  </div>
+</footer>
+
+<script>
+// Nav active state on scroll
+const sections = document.querySelectorAll('[id]');
+const navBtns  = document.querySelectorAll('.nav-btn');
+
+const obs = new IntersectionObserver((entries) => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      navBtns.forEach(b => b.classList.remove('active'));
+      const active = document.querySelector(`.nav-btn[href="#${e.target.id}"]`);
+      if (active) active.classList.add('active');
+    }
+  });
+}, { rootMargin: '-30% 0px -60% 0px' });
+
+sections.forEach(s => obs.observe(s));
+
+// Smooth scroll offset for sticky nav
+document.querySelectorAll('a[href^="#"]').forEach(a => {
+  a.addEventListener('click', e => {
+    e.preventDefault();
+    const target = document.querySelector(a.getAttribute('href'));
+    if (target) {
+      const top = target.getBoundingClientRect().top + window.scrollY - 70;
+      window.scrollTo({ top, behavior: 'smooth' });
+    }
+  });
+});
+</script>
+</body>
+</html>
