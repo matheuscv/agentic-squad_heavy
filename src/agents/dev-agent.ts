@@ -318,8 +318,8 @@ async function processDevJob(job: Job<DevAgentJobData>): Promise<unknown> {
     await createBranch(devBranch); // idempotente: ignora 422 se branch já existe
     jobLog.debug({ devBranch }, 'branch verificado/criado');
 
-    // 3. Executa o agente DEV — timeout de 15 min configurável
-    const agentTimeoutMs = Number(process.env.DEV_AGENT_TIMEOUT_MS ?? 900_000);
+    // 3. Executa o agente DEV — timeout configurável (padrão 30 min)
+    const agentTimeoutMs = Number(process.env.DEV_AGENT_TIMEOUT_MS ?? 1_800_000);
     const signal = AbortSignal.timeout(agentTimeoutMs);
     const devResult = await runDevAgent(
       jiraKey, summary, agentRunId, devBranch,
@@ -438,7 +438,7 @@ export function createDevAgentWorker() {
   const worker = new Worker<DevAgentJobData>('agent-dev', processDevJob, {
     connection: redisConnection,
     concurrency: 5,          // até 5 histórias implementadas em paralelo
-    lockDuration: 960_000,   // 16 min — margem sobre o timeout de 15 min do agente
+    lockDuration: Number(process.env.DEV_AGENT_TIMEOUT_MS ?? 1_800_000) + 120_000, // timeout + 2 min de margem
   });
 
   worker.on('completed', (job, result) => {
