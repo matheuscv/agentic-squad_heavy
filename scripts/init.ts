@@ -45,11 +45,12 @@ import {
   readPemFile,
   looksLikeFilePath,
 }                                                               from '../src/cli/github-setup';
-import { validateDatabaseAccess, runMigrations }               from '../src/cli/supabase-setup';
-import { validateRedisAccess }                                  from '../src/cli/redis-setup';
-import { validateAnthropicAccess, resolveModel, MODEL_DEFAULTS } from '../src/cli/anthropic-setup';
-import { checkServiceHealth, runSmokeTest }                    from '../src/cli/smoke-test';
-import { detectStackFromGitHub }                               from '../src/cli/stack-detector';
+import { validateDatabaseAccess, runMigrations }                          from '../src/cli/supabase-setup';
+import { validateRedisAccess }                                             from '../src/cli/redis-setup';
+import { validateAnthropicAccess, resolveModel, MODEL_DEFAULTS }           from '../src/cli/anthropic-setup';
+import { validateRenderAccess, listRenderServices, setRenderEnvVars }      from '../src/cli/render-setup';
+import { checkServiceHealth, runSmokeTest }                                from '../src/cli/smoke-test';
+import { detectStackFromGitHub }                                           from '../src/cli/stack-detector';
 
 // ─── Utilitários de .env ──────────────────────────────────────────────────────
 
@@ -439,29 +440,81 @@ async function main(): Promise<void> {
   collected['AGENTS_DEV_CONCURRENCY']   = devConcurrency || '5';
   collected['COST_ALERT_THRESHOLD_USD'] = costAlert || '1.00';
 
-  // ── Step 8: Render — URL + variáveis de ambiente ─────────────────────────
+  // ── Step 8: Render — API Key, serviço, vars e deploy ────────────────────
 
-  step(8, TOTAL_STEPS, 'Render — URL do serviço e variáveis de ambiente');
+  step(8, TOTAL_STEPS, 'Render — configuração completa do serviço');
 
-  info('Configure o Web Service no Render (https://render.com) antes de continuar.');
-  info('Todas as variáveis abaixo deverão ser adicionadas em:');
-  info('  Render → seu serviço → Environment → Add Environment Variable');
+  info('Você precisará de uma API Key do Render.');
+  info('Render → Account Settings → API Keys → Create API Key');
   print('');
 
-  const serviceUrl = await ask('SERVICE_URL', existing['SERVICE_URL'] ?? 'https://agentic-squad.onrender.com');
-  const nodeEnv    = await ask('NODE_ENV', existing['NODE_ENV'] ?? 'production');
-  const port       = await ask('PORT',     existing['PORT'] ?? '3000');
+  // ── 8a: API Key e seleção de serviço ─────────────────────────────────────
+
+  const renderApiKey = await ask('RENDER_API_KEY', existing['RENDER_API_KEY'] ?? '');
+
+  let renderServiceId = existing['RENDER_SERVICE_ID'] ?? '';
+  let serviceUrl      = existing['SERVICE_URL'] ?? 'https://agentic-squad.onrender.com';
+
+  if (renderApiKey) {
+    info('Validando API Key do Render...');
+    const renderValidation = await validateRenderAccess(renderApiKey);
+
+    if (!renderValidation.ok) {
+      fail(`Render inacessível: ${renderValidation.detail}`);
+      if (!await confirm('Continuar mesmo assim?', false)) { closePrompts(); process.exit(1); }
+      warn('Continuando sem integração com o Render.');
+    } else {
+      ok('Render API Key válida');
+
+      // Lista serviços e deixa usuário escolher
+      info('Buscando seus Web Services no Render...');
+      try {
+        const services = await listRenderServices(renderApiKey);
+
+        if (services.length === 0) {
+          warn('Nenhum Web Service encontrado — crie o serviço no Render antes de continuar.');
+          renderServiceId = await ask('RENDER_SERVICE_ID (srv-...)', renderServiceId);
+        } else {
+          print('');
+          print('  Serviços disponíveis:');
+          services.forEach((svc, i) => {
+            info(`  [${i + 1}] ${svc.name.padEnd(36)} ${svc.id}  (${svc.type})`);
+          });
+          print('');
+
+          const choice = await ask(
+            `  Escolha o número do serviço [1-${services.length}]`,
+            '1',
+          );
+          const idx = Math.max(0, Math.min(parseInt(choice, 10) - 1, services.length - 1));
+          const chosen = services[idx]!;
+
+          renderServiceId = chosen.id;
+          ok(`Serviço selecionado: ${chosen.name} (${chosen.id})`);
+        }
+      } catch (err) {
+        warn(`Não foi possível listar serviços: ${(err as Error).message}`);
+        renderServiceId = await ask('RENDER_SERVICE_ID (srv-...)', renderServiceId);
+      }
+
+      // SERVICE_URL derivada do nome do serviço ou informada manualmente
+      serviceUrl = await ask('SERVICE_URL', serviceUrl);
+    }
+  } else {
+    warn('RENDER_API_KEY não informada — variáveis não serão enviadas automaticamente.');
+    serviceUrl = await ask('SERVICE_URL', serviceUrl);
+  }
+
+  const nodeEnv = await ask('NODE_ENV', existing['NODE_ENV'] ?? 'production');
+  const port    = await ask('PORT',     existing['PORT'] ?? '3000');
   const webhookUrl = `${serviceUrl.replace(/\/$/, '')}/webhooks/jira?secret=${webhookSecret}`;
 
   collected['SERVICE_URL'] = serviceUrl;
   collected['NODE_ENV']    = nodeEnv;
   collected['PORT']        = port;
+  // RENDER_API_KEY e RENDER_SERVICE_ID ficam fora do .env.init (são credenciais do wizard)
 
-  // ── Revisão e coleta das variáveis do Render ──────────────────────────────
-  //
-  // Lista exata que o Render precisa — na mesma ordem usada no dashboard.
-  // Variáveis já coletadas em steps anteriores são pré-preenchidas;
-  // as ausentes são solicitadas agora.
+  // ── 8b: Revisão e coleta das variáveis do Render ─────────────────────────
 
   const RENDER_VARS: string[] = [
     'ANTHROPIC_API_KEY',
@@ -492,7 +545,6 @@ async function main(): Promise<void> {
     'SUPABASE_URL',
   ];
 
-  // Chaves sensíveis — serão mascaradas no display
   const SENSITIVE = new Set([
     'ANTHROPIC_API_KEY', 'JIRA_API_TOKEN', 'JIRA_WEBHOOK_SECRET',
     'GITHUB_APP_PRIVATE_KEY', 'DATABASE_URL', 'REDIS_URL',
@@ -516,11 +568,9 @@ async function main(): Promise<void> {
     const current = collected[key] ?? existing[key] ?? '';
 
     if (current) {
-      // já coletada — confirma sem perguntar
       renderVars[key] = current;
       info(`✓  ${key.padEnd(34)} ${mask(key, current)}`);
     } else {
-      // ausente — solicita agora
       print('');
       warn(`   ${key} — não foi informada nos steps anteriores`);
       const val = await ask(`   ${key}`, '');
@@ -543,24 +593,47 @@ async function main(): Promise<void> {
     ok('Todas as variáveis do Render estão preenchidas');
   }
 
-  // Grava .env.render — bloco pronto para copiar/colar no Render
+  // Grava .env.render — fallback para copy/paste manual
   const renderEnvPath = resolve(process.cwd(), '.env.render');
   const renderLines   = RENDER_VARS.map((k) => `${k}=${renderVars[k] ?? ''}`);
   writeFileSync(renderEnvPath, renderLines.join('\n') + '\n', 'utf-8');
-
-  print('');
   ok(`.env.render gravado em ${renderEnvPath}`);
-  info('Cole o conteúdo deste arquivo no Render → Environment → Add Environment Variable');
-  info('(ou use o Render CLI: render env set --service <id> < .env.render)');
+
+  // ── 8c: Push automático via Render API ───────────────────────────────────
+
+  if (renderApiKey && renderServiceId) {
+    print('');
+    if (await confirm(`Enviar ${RENDER_VARS.length} variáveis para o Render agora?`, true)) {
+      info(`Enviando variáveis para o serviço ${renderServiceId}...`);
+      const pushResult = await setRenderEnvVars(renderApiKey, renderServiceId, renderVars);
+
+      if (!pushResult.ok) {
+        fail(`Falha ao enviar variáveis: ${pushResult.detail}`);
+        warn('Use o arquivo .env.render para configurar manualmente no painel.');
+      } else {
+        ok(`${pushResult.count ?? RENDER_VARS.length} variáveis enviadas para o Render`);
+        ok('O Render fará um novo deploy automaticamente com as variáveis atualizadas');
+      }
+    } else {
+      info('Push pulado. Use o .env.render para configurar manualmente:');
+      info('  Render → seu serviço → Environment → Add Environment Variable');
+    }
+  } else {
+    print('');
+    info('Configuração manual das variáveis:');
+    info('  Render → seu serviço → Environment → Add Environment Variable');
+    info(`  (ou: render env set --service <id> < ${renderEnvPath})`);
+  }
+
   print('');
 
-  // Health check — feito após coleta para não bloquear o fluxo
+  // Health check — feito após push para pegar o deploy mais recente
   info('Verificando saúde do serviço...');
   const health = await checkServiceHealth(serviceUrl);
 
   if (!health.ok) {
     warn(`Serviço não respondeu — ${health.detail ?? 'timeout'}`);
-    warn('Faça o deploy com as variáveis configuradas e execute novamente para o smoke test.');
+    warn('Aguarde o deploy com as novas variáveis e execute o smoke test separadamente.');
   } else {
     ok(`Serviço respondeu: status=${health.status}`);
   }
