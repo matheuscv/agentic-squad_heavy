@@ -41,7 +41,8 @@ export type DevAgentJobData = {
   priority?: DevJobPriority;    // prioridade na fila (padrão: NORMAL)
   taskIndex?: number;           // índice da onda (1-based); undefined = modo single-DEV
   totalTasks?: number;          // total de ondas no plano
-  taskScope?: string;           // tasks desta onda (ex: "TASK-01, TASK-02")
+  taskScope?: string;           // task única desta onda (ex: "TASK-01"); 1 agente por task
+  waveAgentIndex?: number;      // posição do agente dentro da onda (1-based, para branch name único)
   wavePlan?: string[];          // plano completo de ondas (passado adiante para despacho sequencial)
 };
 
@@ -324,7 +325,7 @@ Lembre-se:
 
 async function processDevJob(job: Job<DevAgentJobData>): Promise<unknown> {
   const { storyId, jiraKey, projectKey, agentRunId, summary, correctionMode, correctionIteration,
-          taskIndex = 1, totalTasks = 1, taskScope, wavePlan, fromStatus } = job.data;
+          taskIndex = 1, totalTasks = 1, taskScope, waveAgentIndex = 1, wavePlan, fromStatus } = job.data;
   const startedAt = new Date();
   const model = process.env.ANTHROPIC_MODEL ?? 'claude-opus-4-7';
   const jobLog = log.child({ jiraKey, projectKey, agentRunId, storyId, correctionMode, taskIndex, totalTasks });
@@ -342,7 +343,7 @@ async function processDevJob(job: Job<DevAgentJobData>): Promise<unknown> {
     // 2. Cria (ou reutiliza) branch de desenvolvimento
     // Em modo paralelo cada onda recebe branch próprio para evitar conflitos de commit.
     const devBranch = totalTasks > 1
-      ? `agent/task-${jiraKey.toLowerCase()}-wave${taskIndex}`
+      ? `agent/task-${jiraKey.toLowerCase()}-wave${taskIndex}-t${waveAgentIndex}`
       : `agent/task-${jiraKey.toLowerCase()}`;
     await createBranch(devBranch); // idempotente: ignora 422 se branch já existe
     jobLog.debug({ devBranch }, 'branch verificado/criado');
@@ -480,31 +481,40 @@ async function processDevJob(job: Job<DevAgentJobData>): Promise<unknown> {
 
     logAgentCompleted(jobLog, { storyId, jiraKey, agentRunId, agent: 'dev', phase, durationMs, inputTokens: devResult.inputTokens, outputTokens: devResult.outputTokens, tokenCostUsd: costUsd });
 
-    // 9. Despacha a próxima onda sequencialmente (ondas são serializadas, tasks dentro de cada onda são paralelas no futuro)
-    if (!correctionMode && wavePlan && wavePlan.length > 0 && taskIndex < totalTasks) {
+    // 9. Despacha a próxima onda (ondas serializadas, tasks dentro de cada onda em paralelo)
+    // Só o último agente da onda atual (pendingDevRuns === 0) dispara este bloco.
+    if (!correctionMode && wavePlan && wavePlan.length > 0 && taskIndex < totalTasks && pendingDevRuns.length === 0) {
       const nextWave = taskIndex + 1;
-      const nextScope = wavePlan[nextWave - 1]; // wavePlan é 0-indexed; taskIndex é 1-based
+      const nextWaveScope = wavePlan[nextWave - 1] ?? ''; // wavePlan é 0-indexed
+      const nextWaveTasks = nextWaveScope.split(',').map(t => t.trim()).filter(Boolean);
+      if (nextWaveTasks.length === 0) nextWaveTasks.push(nextWaveScope); // fallback: onda sem task explícita
 
-      const [nextRun] = await db
-        .insert(schema.agentRuns)
-        .values({
-          storyId,
-          agentType: 'dev',
-          status: 'pending',
-          input: { jiraKey, taskIndex: nextWave, totalTasks, taskScope: nextScope },
-        })
-        .returning({ id: schema.agentRuns.id });
+      for (let i = 0; i < nextWaveTasks.length; i++) {
+        const nextTaskScope = nextWaveTasks[i]!;
+        const nextWaveAgentIndex = i + 1;
 
-      const nextRunId = nextRun!.id;
+        const [nextRun] = await db
+          .insert(schema.agentRuns)
+          .values({
+            storyId,
+            agentType: 'dev',
+            status: 'pending',
+            input: { jiraKey, taskIndex: nextWave, totalTasks, taskScope: nextTaskScope, waveAgentIndex: nextWaveAgentIndex },
+          })
+          .returning({ id: schema.agentRuns.id });
 
-      await devAgentQueue.add(
-        'dev:run',
-        { storyId, jiraKey, projectKey, agentRunId: nextRunId, summary, fromStatus,
-          taskIndex: nextWave, totalTasks, taskScope: nextScope, wavePlan },
-        { jobId: `dev-${jiraKey}-${nextRunId}`, priority: DEV_JOB_PRIORITY.NORMAL },
-      );
+        const nextRunId = nextRun!.id;
 
-      jobLog.info({ jiraKey, nextWave, totalTasks, nextScope }, 'onda seguinte despachada');
+        await devAgentQueue.add(
+          'dev:run',
+          { storyId, jiraKey, projectKey, agentRunId: nextRunId, summary, fromStatus,
+            taskIndex: nextWave, totalTasks, taskScope: nextTaskScope,
+            waveAgentIndex: nextWaveAgentIndex, wavePlan },
+          { jobId: `dev-${jiraKey}-${nextRunId}`, priority: DEV_JOB_PRIORITY.NORMAL },
+        );
+      }
+
+      jobLog.info({ jiraKey, nextWave, totalTasks, tasksDispatched: nextWaveTasks.length, nextWaveScope }, 'onda seguinte despachada');
     }
 
     return output;
