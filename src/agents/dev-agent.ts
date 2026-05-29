@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { Queue, Worker, type Job } from 'bullmq';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, ne } from 'drizzle-orm';
 import { db, schema } from '../db/index';
 import { updateStoryStatus } from '../db/stories';
 import { redisConnection, agentDlqQueue } from '../queue/index';
@@ -40,8 +40,9 @@ export type DevAgentJobData = {
   correctionIteration?: number; // ciclo de correção (1–3)
   priority?: DevJobPriority;    // prioridade na fila (padrão: NORMAL)
   taskIndex?: number;           // índice da onda (1-based); undefined = modo single-DEV
-  totalTasks?: number;          // total de ondas despachadas em paralelo
+  totalTasks?: number;          // total de ondas no plano
   taskScope?: string;           // tasks desta onda (ex: "TASK-01, TASK-02")
+  wavePlan?: string[];          // plano completo de ondas (passado adiante para despacho sequencial)
 };
 
 type DevAgentResult = {
@@ -323,7 +324,7 @@ Lembre-se:
 
 async function processDevJob(job: Job<DevAgentJobData>): Promise<unknown> {
   const { storyId, jiraKey, projectKey, agentRunId, summary, correctionMode, correctionIteration,
-          taskIndex = 1, totalTasks = 1, taskScope } = job.data;
+          taskIndex = 1, totalTasks = 1, taskScope, wavePlan, fromStatus } = job.data;
   const startedAt = new Date();
   const model = process.env.ANTHROPIC_MODEL ?? 'claude-opus-4-7';
   const jobLog = log.child({ jiraKey, projectKey, agentRunId, storyId, correctionMode, taskIndex, totalTasks });
@@ -393,7 +394,7 @@ async function processDevJob(job: Job<DevAgentJobData>): Promise<unknown> {
 
     jobLog.info({ artifactId: artifact!.id }, 'artifact code salvo no banco');
 
-    // 5. Verifica se há outros DEV runs ainda ativos para esta story
+    // 5. Verifica se há outros DEV runs ainda ativos para esta story (exclui o próprio run)
     const pendingDevRuns = await db
       .select({ id: schema.agentRuns.id })
       .from(schema.agentRuns)
@@ -402,11 +403,14 @@ async function processDevJob(job: Job<DevAgentJobData>): Promise<unknown> {
           eq(schema.agentRuns.storyId, storyId),
           eq(schema.agentRuns.agentType, 'dev'),
           inArray(schema.agentRuns.status, ['pending', 'running']),
+          ne(schema.agentRuns.id, agentRunId),
         ),
       )
       .limit(1);
 
-    const isLastDev = pendingDevRuns.length === 0;
+    // Considera "última onda" apenas se não há mais ondas a despachar
+    const isLastWave = !wavePlan || wavePlan.length === 0 || taskIndex >= totalTasks;
+    const isLastDev = pendingDevRuns.length === 0 && isLastWave;
     const waveLabel = totalTasks > 1 ? ` (Onda ${taskIndex}/${totalTasks})` : '';
 
     // 6. Comenta no Jira com link para o PR desta onda
@@ -475,6 +479,34 @@ async function processDevJob(job: Job<DevAgentJobData>): Promise<unknown> {
     await checkAndAlertIfOverBudget(storyId, jiraKey, jobLog);
 
     logAgentCompleted(jobLog, { storyId, jiraKey, agentRunId, agent: 'dev', phase, durationMs, inputTokens: devResult.inputTokens, outputTokens: devResult.outputTokens, tokenCostUsd: costUsd });
+
+    // 9. Despacha a próxima onda sequencialmente (ondas são serializadas, tasks dentro de cada onda são paralelas no futuro)
+    if (!correctionMode && wavePlan && wavePlan.length > 0 && taskIndex < totalTasks) {
+      const nextWave = taskIndex + 1;
+      const nextScope = wavePlan[nextWave - 1]; // wavePlan é 0-indexed; taskIndex é 1-based
+
+      const [nextRun] = await db
+        .insert(schema.agentRuns)
+        .values({
+          storyId,
+          agentType: 'dev',
+          status: 'pending',
+          input: { jiraKey, taskIndex: nextWave, totalTasks, taskScope: nextScope },
+        })
+        .returning({ id: schema.agentRuns.id });
+
+      const nextRunId = nextRun!.id;
+
+      await devAgentQueue.add(
+        'dev:run',
+        { storyId, jiraKey, projectKey, agentRunId: nextRunId, summary, fromStatus,
+          taskIndex: nextWave, totalTasks, taskScope: nextScope, wavePlan },
+        { jobId: `dev-${jiraKey}-${nextRunId}`, priority: DEV_JOB_PRIORITY.NORMAL },
+      );
+
+      jobLog.info({ jiraKey, nextWave, totalTasks, nextScope }, 'onda seguinte despachada');
+    }
+
     return output;
 
   } catch (err) {

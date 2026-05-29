@@ -252,46 +252,47 @@ async function dispatchDevAgents(
   }
 
   const totalTasks = Math.max(waves.length, 1);
+  // Ondas são serializadas: despacha apenas a onda 1 agora.
+  // Cada onda, ao concluir, despacha a próxima via processDevJob (step 9).
   log.info({ jiraKey, totalTasks, waves }, 'despachando agentes DEV em paralelo');
 
-  // 4. Cria 1 agentRun + 1 job por onda
-  for (let i = 0; i < totalTasks; i++) {
-    const taskIndex = i + 1;
-    const taskScope = waves[i]; // undefined quando sem ondas (totalTasks === 1)
+  // 4. Cria 1 agentRun + 1 job para a onda 1 (demais ondas são despachadas sequencialmente)
+  const taskIndex = 1;
+  const taskScope = waves[0]; // undefined quando sem ondas (totalTasks === 1)
 
-    const [agentRun] = await db
-      .insert(schema.agentRuns)
-      .values({
-        storyId,
-        agentType: 'dev',
-        status: 'pending',
-        input: { jiraKey, fromStatus: jobData.fromStatus, toStatus: jobData.toStatus, taskIndex, totalTasks, taskScope },
-      })
-      .returning({ id: schema.agentRuns.id });
+  const [agentRun] = await db
+    .insert(schema.agentRuns)
+    .values({
+      storyId,
+      agentType: 'dev',
+      status: 'pending',
+      input: { jiraKey, fromStatus: jobData.fromStatus, toStatus: jobData.toStatus, taskIndex, totalTasks, taskScope },
+    })
+    .returning({ id: schema.agentRuns.id });
 
-    const agentRunId = agentRun!.id;
+  const agentRunId = agentRun!.id;
 
-    await devAgentQueue.add(
-      'dev:run',
-      {
-        storyId,
-        jiraKey,
-        projectKey: jobData.projectKey,
-        agentRunId,
-        summary: jobData.summary,
-        fromStatus: jobData.fromStatus,
-        taskIndex,
-        totalTasks,
-        taskScope,
-      },
-      { jobId: `dev-${jiraKey}-${agentRunId}`, priority: DEV_JOB_PRIORITY.NORMAL },
-    );
+  await devAgentQueue.add(
+    'dev:run',
+    {
+      storyId,
+      jiraKey,
+      projectKey: jobData.projectKey,
+      agentRunId,
+      summary: jobData.summary,
+      fromStatus: jobData.fromStatus,
+      taskIndex,
+      totalTasks,
+      taskScope,
+      wavePlan: waves, // plano completo para despacho sequencial das ondas seguintes
+    },
+    { jobId: `dev-${jiraKey}-${agentRunId}`, priority: DEV_JOB_PRIORITY.NORMAL },
+  );
 
-    log.info(
-      { jiraKey, agentRunId, taskIndex, totalTasks, taskScope, queue: 'agent-dev' },
-      'job enfileirado para agente DEV',
-    );
-  }
+  log.info(
+    { jiraKey, agentRunId, taskIndex, totalTasks, taskScope, queue: 'agent-dev' },
+    'job enfileirado para agente DEV',
+  );
 }
 
 // ─── Criação do Worker ────────────────────────────────────────────────────────
